@@ -1,0 +1,4 @@
+ib_async>=1.0.0
+pandas>=1.5.0
+lxml>=4.9.0
+
