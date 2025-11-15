@@ -4,47 +4,35 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
 
 # Virtual environments
 venv/
-ENV/
 env/
-.venv/
+ENV/
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+Thumbs.db
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.mypy_cache/
+# Project specific - output files
+output/*.csv
+!output/discord_messages.csv
 
-# CSV data files
-*.csv
-data/
+# Data files (keep structure, ignore CSVs in data/)
+data/*.csv
 
-# Logs
-*.log
-
+# Test outputs
+*_test.csv
+*_new.csv
+*_new[0-9].csv
