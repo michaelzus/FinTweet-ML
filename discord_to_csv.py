@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 from collections import Counter
+import pytz
 
 
 class MessageCategorizer:
@@ -368,10 +369,34 @@ class CSVWriter:
         return stats
 
     def _convert_timestamp(self, timestamp_str: str) -> str:
-        """Convert timestamp to ISO format."""
+        """
+        Convert timestamp from Jerusalem time to US Eastern time.
+        
+        Handles daylight saving time (DST) transitions correctly for both timezones.
+        
+        Args:
+            timestamp_str: Timestamp in format 'DD/MM/YYYY HH:MM' (Jerusalem time)
+            
+        Returns:
+            Timestamp in ISO format 'YYYY-MM-DD HH:MM:SS' (US Eastern time)
+        """
         try:
-            dt = datetime.strptime(timestamp_str, '%d/%m/%Y %H:%M')
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
+            # Parse timestamp as naive datetime
+            dt_naive = datetime.strptime(timestamp_str, '%d/%m/%Y %H:%M')
+            
+            # Define timezones
+            jerusalem_tz = pytz.timezone('Asia/Jerusalem')
+            eastern_tz = pytz.timezone('America/New_York')
+            
+            # Localize to Jerusalem time (this handles IST/IDT automatically)
+            dt_jerusalem = jerusalem_tz.localize(dt_naive)
+            
+            # Convert to US Eastern time (handles EST/EDT automatically)
+            dt_eastern = dt_jerusalem.astimezone(eastern_tz)
+            
+            # Return in ISO format
+            return dt_eastern.strftime('%Y-%m-%d %H:%M:%S')
+            
         except ValueError:
             return timestamp_str
 
