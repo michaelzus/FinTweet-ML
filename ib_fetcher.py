@@ -80,7 +80,14 @@ class IBHistoricalDataFetcher:
             self.logger.info("Disconnected from IB")
 
     async def fetch_historical_data(
-        self, symbol: str, exchange: str = "SMART", currency: str = "USD", duration: str = "1 Y", bar_size: str = "1 day"
+        self,
+        symbol: str,
+        exchange: str = "SMART",
+        currency: str = "USD",
+        duration: str = "1 Y",
+        bar_size: str = "1 day",
+        use_rth: bool = True,
+        end_datetime: str = "",
     ) -> Optional[pd.DataFrame]:
         """
         Fetch historical OHLCV data for a single stock.
@@ -90,7 +97,9 @@ class IBHistoricalDataFetcher:
             exchange: Exchange (default: SMART for automatic routing)
             currency: Currency (default: USD)
             duration: Duration string (e.g., '1 Y', '6 M', '30 D')
-            bar_size: Bar size (e.g., '1 day', '1 hour', '5 mins')
+            bar_size: Bar size (e.g., '1 day', '1 hour', '5 mins', '1 min')
+            use_rth: Use regular trading hours only (default: True)
+            end_datetime: End date/time for historical data (default: "" for now)
 
         Returns:
             DataFrame with OHLCV data or None if error occurs
@@ -108,7 +117,13 @@ class IBHistoricalDataFetcher:
 
             # Request historical data
             bars = await self.ib.reqHistoricalDataAsync(
-                contract, endDateTime="", durationStr=duration, barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True, formatDate=1
+                contract,
+                endDateTime=end_datetime,
+                durationStr=duration,
+                barSizeSetting=bar_size,
+                whatToShow="TRADES",
+                useRTH=use_rth,
+                formatDate=1,
             )
 
             if not bars:
@@ -117,6 +132,18 @@ class IBHistoricalDataFetcher:
 
             # Convert to DataFrame
             df = util.df(bars)
+            df.columns = df.columns.str.lower()
+
+            # Set date column as index if it's not already
+            if not isinstance(df.index, pd.DatetimeIndex):
+                if "date" in df.columns:
+                    df = df.set_index("date")
+                else:
+                    self.logger.error(f"No date column found for {symbol}")
+                    return None
+
+            # Ensure datetime index
+            df.index = pd.to_datetime(df.index)
 
             self.logger.debug(f"Successfully fetched {len(df)} bars for {symbol}")
             return df
