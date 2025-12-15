@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -260,6 +260,7 @@ class TweetEnricher:
         # Get SPY data from cache for market adjustment
         spy_df_full = self.cache.get_daily("SPY")
         spy_return_1d = None
+        spy_df = None
 
         if spy_df_full is not None and not spy_df_full.empty:
             # CRITICAL: Slice SPY data to only include data UP TO tweet date
@@ -294,7 +295,7 @@ class TweetEnricher:
         if spy_intraday_df_full is not None and not spy_intraday_df_full.empty:
             spy_intraday_df = spy_intraday_df_full[spy_intraday_df_full.index <= max_intraday_time].copy()
 
-        if spy_df_full is not None and not spy_df_full.empty:
+        if spy_df is not None and not spy_df.empty:
             # Use SLICED SPY data (already filtered above)
             spy_session = get_market_session(timestamp)
             spy_price_at_tweet, _ = self.get_price_at_timestamp(spy_df, spy_intraday_df, timestamp, spy_session)
@@ -414,4 +415,3 @@ class TweetEnricher:
         output_df = output_df[column_order]
 
         return output_df
-
