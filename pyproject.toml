@@ -1,0 +1,73 @@
+[project]
+name = "tweet-enricher"
+version = "0.1.0"
+description = "A tool for enriching tweet data with financial indicators and market information"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ib-async>=1.0.0",
+    "pandas>=1.5.0",
+    "pandas-ta>=0.3.14b",
+    "pandas-market-calendars>=4.0.0",
+    "pytz>=2023.3",
+    "lxml>=4.9.0",
+    "pyarrow>=14.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "black>=23.0.0",
+    "pydocstyle>=6.0.0",
+    "darglint>=1.8.0",
+]
+
+[project.scripts]
+tweet-enricher = "tweet_enricher.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Black configuration - code formatter
+[tool.black]
+line-length = 140
+target-version = ['py311', 'py312']
+include = '\\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# MyPy configuration - type checking
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = "(^tests/|setup\\.py$)"
+
+# Pydocstyle configuration - docstring style checking
+[tool.pydocstyle]
+ignore = ["D100", "D104", "D203", "D403", "D213", "D107", "D401", "D406", "D407", "D413", "D212", "D400", "D415"]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
