@@ -6,14 +6,15 @@ This module provides utilities for:
 - Computing class weights for imbalanced data
 - PyTorch Dataset for multi-modal training
 - Preprocessing artifact persistence (scaler, encodings)
+- FinBERTMultiModal model for classification
 """
 
 from tweet_classifier.config import (
-    TARGET_COLUMN,
-    NUMERICAL_FEATURES,
     CATEGORICAL_FEATURES,
     LABEL_MAP,
     LABEL_MAP_INV,
+    NUMERICAL_FEATURES,
+    TARGET_COLUMN,
 )
 from tweet_classifier.dataset import (
     TweetDataset,
@@ -27,6 +28,7 @@ from tweet_classifier.dataset import (
     save_preprocessing_artifacts,
     save_scaler,
 )
+from tweet_classifier.model import FinBERTMultiModal
 
 __all__ = [
     # Config
@@ -40,6 +42,8 @@ __all__ = [
     "create_categorical_encodings",
     "create_dataset_from_df",
     "encode_categorical",
+    # Model
+    "FinBERTMultiModal",
     # Persistence
     "save_scaler",
     "load_scaler",

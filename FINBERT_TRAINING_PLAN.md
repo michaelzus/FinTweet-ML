@@ -446,7 +446,7 @@ df_train["category_idx"] = df_train["category"].map(category_to_idx)
 | TweetDataset | `dataset.py` | ✅ Multi-modal dataset with tokenization |
 | Categorical encoding | `dataset.py` | ✅ `create_categorical_encodings()`, `encode_categorical()` |
 | Scaler persistence | `dataset.py` | ✅ `save_scaler()`, `load_scaler()`, `save_preprocessing_artifacts()` |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 tests passing |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 tests passing (Phase 2) |
 
 **Usage example:**
 ```python
@@ -486,41 +486,11 @@ save_preprocessing_artifacts(scaler, encodings, "models/finbert-tweet-classifier
 
 ## Phase 3: Model Architecture
 
+✅ **Phase 3 Complete** - Model implemented in `src/tweet_classifier/model.py`
+
 ### 3.1 Dataset Class
 
-```python
-import torch
-from torch.utils.data import Dataset
-
-class TweetDataset(Dataset):
-    """Dataset for tweet classification with multi-modal features."""
-    
-    def __init__(self, texts, numerical_features, author_indices, category_indices, labels, tokenizer, max_length=128):
-        self.encodings = tokenizer(
-            texts.tolist(),
-            truncation=True,
-            padding="max_length",
-            max_length=max_length,
-            return_tensors="pt"
-        )
-        self.numerical = torch.tensor(numerical_features, dtype=torch.float32)
-        self.author_idx = torch.tensor(author_indices, dtype=torch.long)
-        self.category_idx = torch.tensor(category_indices, dtype=torch.long)
-        self.labels = torch.tensor(labels, dtype=torch.long)
-    
-    def __len__(self):
-        return len(self.labels)
-    
-    def __getitem__(self, idx):
-        return {
-            "input_ids": self.encodings["input_ids"][idx],
-            "attention_mask": self.encodings["attention_mask"][idx],
-            "numerical": self.numerical[idx],
-            "author_idx": self.author_idx[idx],
-            "category_idx": self.category_idx[idx],
-            "labels": self.labels[idx]
-        }
-```
+Already implemented in Phase 2 (`dataset.py`). See Phase 2 Implementation Status.
 
 ### 3.2 Multi-Modal Model
 
@@ -575,7 +545,7 @@ class FinBERTMultiModal(nn.Module):
             nn.Linear(128, num_classes)
         )
     
-    def forward(self, input_ids, attention_mask, numerical, author_idx, category_idx):
+    def forward(self, input_ids, attention_mask, numerical, author_idx, category_idx, labels=None):
         # Get BERT [CLS] embedding
         bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         cls_embedding = bert_output.last_hidden_state[:, 0, :]  # [batch, 768]
@@ -593,7 +563,50 @@ class FinBERTMultiModal(nn.Module):
         # Classification
         logits = self.classifier(combined)  # [batch, 3]
         
-        return logits
+        output = {"logits": logits}
+        if labels is not None:
+            loss = F.cross_entropy(logits, labels)
+            output["loss"] = loss
+        
+        return output
+```
+
+### Phase 3 Implementation Status
+
+| Component | File | Status |
+|-----------|------|--------|
+| FinBERTMultiModal | `model.py` | ✅ Multi-modal model with BERT + numerical + categorical |
+| Forward method | `model.py` | ✅ Returns dict with `logits` and optional `loss` |
+| BERT freezing | `model.py` | ✅ `freeze_bert` parameter for fine-tuning control |
+| Config serialization | `model.py` | ✅ `get_config()` method for saving model config |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 7 new tests (23 total) |
+
+**Usage example:**
+```python
+from tweet_classifier import FinBERTMultiModal
+
+# Initialize model
+model = FinBERTMultiModal(
+    num_numerical_features=4,
+    num_authors=10,
+    num_categories=5,
+    num_classes=3,
+    freeze_bert=False,  # Fine-tune BERT
+    dropout=0.3
+)
+
+# Forward pass
+output = model(
+    input_ids=input_ids,
+    attention_mask=attention_mask,
+    numerical=numerical_features,
+    author_idx=author_indices,
+    category_idx=category_indices,
+    labels=labels  # Optional: if provided, returns loss
+)
+
+logits = output["logits"]  # [batch, 3]
+loss = output.get("loss")   # Only if labels provided
 ```
 
 ---
@@ -1011,16 +1024,16 @@ print(f"Signal: {signal}, Confidence: {confidence}")
 TimeWaste2/
 ├── src/
 │   └── tweet_enricher/              # Existing enrichment pipeline
-│   └── tweet_classifier/            # ✅ Training code (Phase 2 complete)
+│   └── tweet_classifier/            # ✅ Training code (Phase 3 complete)
 │       ├── __init__.py              # ✅ Module exports
 │       ├── config.py                # ✅ Global configuration constants
 │       ├── dataset.py               # ✅ TweetDataset + scaler persistence
+│       ├── model.py                 # ✅ FinBERTMultiModal class
 │       ├── data/
 │       │   ├── __init__.py          # ✅ Data submodule exports
 │       │   ├── loader.py            # ✅ Data loading + filtering
 │       │   ├── splitter.py          # ✅ Hash-based splitting
 │       │   └── weights.py           # ✅ Class weight computation
-│       ├── model.py                 # TODO: FinBERTMultiModal class
 │       ├── train.py                 # TODO: Training script
 │       └── predict.py               # TODO: Inference utilities
 ├── models/
@@ -1036,7 +1049,7 @@ TimeWaste2/
 │   ├── phase0_validation.ipynb      # ✅ Pre-training validation
 │   └── phase2_feature_engineering.ipynb  # ✅ Feature engineering verification
 ├── tests/
-│   └── test_tweet_classifier.py     # ✅ Unit tests (16 tests)
+│   └── test_tweet_classifier.py     # ✅ Unit tests (23 tests)
 └── pyproject.toml                   # Dependencies included
 ```
 
@@ -1062,7 +1075,7 @@ joblib>=1.3.0
 1. ~~**Run enrichment** on `15-dec2.csv` to generate enriched data~~ ✅ Done (`15-dec-enrich7.csv`)
 2. ~~**Run Phase 0 validation** to confirm data integrity~~ ✅ Done (see `notebooks/phase0_validation.ipynb`)
 3. ~~**Create** `src/tweet_classifier/` module~~ ✅ Done (Phase 2 feature engineering complete)
-4. **Implement** `FinBERTMultiModal` model class (Phase 3)
+4. ~~**Implement** `FinBERTMultiModal` model class~~ ✅ Done (Phase 3 complete)
 5. **Train** the model and evaluate on test set (Phase 4-5)
 6. **Iterate** on hyperparameters based on F1 scores
 7. **Deploy** for real-time inference on new tweets (Phase 6)

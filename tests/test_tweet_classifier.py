@@ -137,21 +137,32 @@ class TestCategoricalEncoding:
             )
 
 
+class MockTokenizer:
+    """Mock tokenizer for testing TweetDataset without loading real model."""
+
+    def __call__(self, texts, **kwargs):
+        """Tokenize texts returning numpy arrays of zeros/ones.
+
+        Args:
+            texts: List of text strings to tokenize.
+            **kwargs: Additional keyword arguments (max_length supported).
+
+        Returns:
+            Dict with input_ids and attention_mask numpy arrays.
+        """
+        n = len(texts)
+        max_len = kwargs.get("max_length", 128)
+        return {
+            "input_ids": np.zeros((n, max_len), dtype=np.int64),
+            "attention_mask": np.ones((n, max_len), dtype=np.int64),
+        }
+
+
 class TestTweetDataset:
     """Tests for TweetDataset class."""
 
     def test_dataset_returns_correct_tensor_shapes(self, sample_df: pd.DataFrame):
         """Test TweetDataset returns tensors with correct shapes."""
-        # Mock tokenizer
-        class MockTokenizer:
-            def __call__(self, texts, **kwargs):
-                n = len(texts)
-                max_len = kwargs.get("max_length", 128)
-                return {
-                    "input_ids": np.zeros((n, max_len), dtype=np.int64),
-                    "attention_mask": np.ones((n, max_len), dtype=np.int64),
-                }
-
         tokenizer = MockTokenizer()
         sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
@@ -187,16 +198,6 @@ class TestTweetDataset:
 
     def test_dataset_encodes_labels_correctly(self, sample_df: pd.DataFrame):
         """Test labels are encoded to integers correctly."""
-
-        class MockTokenizer:
-            def __call__(self, texts, **kwargs):
-                n = len(texts)
-                max_len = kwargs.get("max_length", 128)
-                return {
-                    "input_ids": np.zeros((n, max_len), dtype=np.int64),
-                    "attention_mask": np.ones((n, max_len), dtype=np.int64),
-                }
-
         tokenizer = MockTokenizer()
         sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
@@ -308,3 +309,212 @@ class TestClassWeights:
         assert weights[LABEL_MAP["BUY"]] > weights[LABEL_MAP["SELL"]]
         assert weights[LABEL_MAP["BUY"]] > weights[LABEL_MAP["HOLD"]]
 
+
+class TestFinBERTMultiModal:
+    """Tests for the FinBERTMultiModal model class."""
+
+    @pytest.fixture
+    def mock_bert_model(self, monkeypatch):  # noqa: DAR101
+        """Mock BertModel to avoid downloading weights during tests."""
+        import torch
+        import torch.nn as nn
+
+        class MockBertConfig:
+            hidden_size = 768
+
+        class MockBertOutput:
+            def __init__(self, batch_size, seq_len):
+                self.last_hidden_state = torch.randn(batch_size, seq_len, 768)
+
+        class MockBertModel(nn.Module):
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+                self.config = MockBertConfig()
+                # Add a dummy parameter so model has parameters
+                self.dummy = nn.Linear(768, 768)
+
+            def forward(self, input_ids, attention_mask):
+                batch_size = input_ids.shape[0]
+                seq_len = input_ids.shape[1]
+                return MockBertOutput(batch_size, seq_len)
+
+            @classmethod
+            def from_pretrained(cls, *args, **kwargs):
+                return cls()
+
+        monkeypatch.setattr("tweet_classifier.model.BertModel", MockBertModel)
+        return MockBertModel
+
+    def test_model_instantiation(self, mock_bert_model):  # noqa: DAR101
+        """Test model can be instantiated with correct parameters."""
+        from tweet_classifier.model import FinBERTMultiModal
+
+        model = FinBERTMultiModal(
+            num_numerical_features=4,
+            num_authors=5,
+            num_categories=3,
+        )
+
+        assert model.num_numerical_features == 4
+        assert model.num_authors == 5
+        assert model.num_categories == 3
+        assert model.num_classes == 3
+
+    def test_forward_pass_output_shape(self, mock_bert_model):  # noqa: DAR101
+        """Test forward pass returns correct output shapes."""
+        import torch
+
+        from tweet_classifier.model import FinBERTMultiModal
+
+        batch_size = 4
+        seq_len = 128
+        num_features = 4
+        num_authors = 5
+        num_categories = 3
+
+        model = FinBERTMultiModal(
+            num_numerical_features=num_features,
+            num_authors=num_authors,
+            num_categories=num_categories,
+        )
+        model.eval()
+
+        # Create dummy inputs
+        input_ids = torch.randint(0, 1000, (batch_size, seq_len))
+        attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+        numerical = torch.randn(batch_size, num_features)
+        author_idx = torch.randint(0, num_authors, (batch_size,))
+        category_idx = torch.randint(0, num_categories, (batch_size,))
+
+        with torch.no_grad():
+            output = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                numerical=numerical,
+                author_idx=author_idx,
+                category_idx=category_idx,
+            )
+
+        assert "logits" in output
+        assert output["logits"].shape == (batch_size, 3)
+        assert "loss" not in output  # No labels provided
+
+    def test_forward_pass_with_labels_returns_loss(self, mock_bert_model):  # noqa: DAR101
+        """Test forward pass computes loss when labels provided."""
+        import torch
+
+        from tweet_classifier.model import FinBERTMultiModal
+
+        batch_size = 4
+        seq_len = 128
+        num_features = 4
+        num_authors = 5
+        num_categories = 3
+
+        model = FinBERTMultiModal(
+            num_numerical_features=num_features,
+            num_authors=num_authors,
+            num_categories=num_categories,
+        )
+
+        # Create dummy inputs with labels
+        input_ids = torch.randint(0, 1000, (batch_size, seq_len))
+        attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
+        numerical = torch.randn(batch_size, num_features)
+        author_idx = torch.randint(0, num_authors, (batch_size,))
+        category_idx = torch.randint(0, num_categories, (batch_size,))
+        labels = torch.randint(0, 3, (batch_size,))
+
+        output = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            numerical=numerical,
+            author_idx=author_idx,
+            category_idx=category_idx,
+            labels=labels,
+        )
+
+        assert "logits" in output
+        assert "loss" in output
+        assert output["loss"].shape == ()  # Scalar loss
+        assert output["loss"].requires_grad  # Loss should be differentiable
+
+    def test_frozen_bert_has_no_gradients(self, mock_bert_model):  # noqa: DAR101
+        """Test that frozen BERT parameters have requires_grad=False."""
+        from tweet_classifier.model import FinBERTMultiModal
+
+        model = FinBERTMultiModal(
+            num_numerical_features=4,
+            num_authors=5,
+            num_categories=3,
+            freeze_bert=True,
+        )
+
+        # All BERT parameters should have requires_grad=False
+        for param in model.bert.parameters():
+            assert not param.requires_grad, "BERT parameter should be frozen"
+
+        # Other parameters should still be trainable
+        for param in model.numerical_encoder.parameters():
+            assert param.requires_grad, "Numerical encoder should be trainable"
+
+        for param in model.classifier.parameters():
+            assert param.requires_grad, "Classifier should be trainable"
+
+    def test_unfrozen_bert_has_gradients(self, mock_bert_model):  # noqa: DAR101
+        """Test that unfrozen BERT parameters have requires_grad=True."""
+        from tweet_classifier.model import FinBERTMultiModal
+
+        model = FinBERTMultiModal(
+            num_numerical_features=4,
+            num_authors=5,
+            num_categories=3,
+            freeze_bert=False,
+        )
+
+        # All BERT parameters should have requires_grad=True
+        for param in model.bert.parameters():
+            assert param.requires_grad, "BERT parameter should be trainable"
+
+    def test_get_config_returns_correct_values(self, mock_bert_model):  # noqa: DAR101
+        """Test get_config returns correct configuration."""
+        from tweet_classifier.model import FinBERTMultiModal
+
+        model = FinBERTMultiModal(
+            num_numerical_features=4,
+            num_authors=5,
+            num_categories=3,
+            dropout=0.5,
+            freeze_bert=True,
+        )
+
+        config = model.get_config()
+
+        assert config["num_numerical_features"] == 4
+        assert config["num_authors"] == 5
+        assert config["num_categories"] == 3
+        assert config["num_classes"] == 3
+        assert config["dropout"] == 0.5
+        assert config["freeze_bert"] is True
+
+    def test_model_embedding_dimensions(self, mock_bert_model):  # noqa: DAR101
+        """Test embedding layers have correct dimensions."""
+        from tweet_classifier.model import FinBERTMultiModal
+
+        num_authors = 10
+        num_categories = 5
+        author_emb_dim = 16
+        category_emb_dim = 8
+
+        model = FinBERTMultiModal(
+            num_numerical_features=4,
+            num_authors=num_authors,
+            num_categories=num_categories,
+            author_embedding_dim=author_emb_dim,
+            category_embedding_dim=category_emb_dim,
+        )
+
+        assert model.author_embedding.num_embeddings == num_authors
+        assert model.author_embedding.embedding_dim == author_emb_dim
+        assert model.category_embedding.num_embeddings == num_categories
+        assert model.category_embedding.embedding_dim == category_emb_dim

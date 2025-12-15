@@ -13,6 +13,7 @@ from tweet_classifier.config import (
     LABEL_MAP,
     MAX_TEXT_LENGTH,
     NUMERICAL_FEATURES,
+    TARGET_COLUMN,
     TEXT_COLUMN,
 )
 
@@ -47,6 +48,9 @@ class TweetDataset(Dataset):
             labels: Series or array of labels (strings or integers).
             tokenizer: HuggingFace tokenizer for text encoding.
             max_length: Maximum token length for text (default: 128).
+
+        Raises:
+            ValueError: If labels array is empty.
         """
         # Convert texts to list
         if isinstance(texts, pd.Series):
@@ -77,12 +81,18 @@ class TweetDataset(Dataset):
         # Convert labels
         if isinstance(labels, pd.Series):
             labels = labels.values
+        if len(labels) == 0:
+            raise ValueError("Labels array cannot be empty")
         if isinstance(labels[0], str):
             labels = np.array([LABEL_MAP[label] for label in labels])
         self.labels = torch.tensor(labels, dtype=torch.long)
 
     def __len__(self) -> int:
-        """Return the number of samples in the dataset."""
+        """Return the number of samples in the dataset.
+
+        Returns:
+            Number of samples.
+        """
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
@@ -155,6 +165,9 @@ def encode_categorical(
 
     Returns:
         DataFrame with additional author_idx and category_idx columns.
+
+    Raises:
+        ValueError: If handle_unknown='error' and unknown authors/categories found.
     """
     df = df.copy()
 
@@ -180,9 +193,9 @@ def create_dataset_from_df(
     tokenizer,
     author_to_idx: Dict[str, int],
     category_to_idx: Dict[str, int],
-    scaler: Optional[object] = None,
+    scaler: Optional[Any] = None,
     fit_scaler: bool = False,
-) -> TweetDataset:
+) -> Tuple[TweetDataset, Any]:
     """Create TweetDataset from DataFrame.
 
     Args:
@@ -194,7 +207,7 @@ def create_dataset_from_df(
         fit_scaler: If True, fit the scaler on this data (for training set only).
 
     Returns:
-        TweetDataset instance.
+        Tuple of (TweetDataset instance, fitted scaler).
     """
     from sklearn.preprocessing import StandardScaler
 
@@ -214,8 +227,6 @@ def create_dataset_from_df(
         numerical = scaler.transform(numerical)
 
     # Create dataset
-    from tweet_classifier.config import TARGET_COLUMN
-
     dataset = TweetDataset(
         texts=df[TEXT_COLUMN],
         numerical_features=numerical,
@@ -335,4 +346,3 @@ def load_preprocessing_artifacts(
     encodings = load_categorical_encodings(encodings_path)
 
     return scaler, encodings
-
