@@ -1,5 +1,6 @@
 """Tweet enrichment with financial indicators and price information."""
 
+import hashlib
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
@@ -143,6 +144,33 @@ class TweetEnricher:
 
         return None, "no_data_available"
 
+    def get_price_next_open(
+        self,
+        daily_df: pd.DataFrame,
+        timestamp: datetime,
+    ) -> Tuple[Optional[float], str]:
+        """
+        Get next trading day's open price after tweet.
+
+        Args:
+            daily_df: Daily OHLCV data (must include data AFTER tweet date)
+            timestamp: Tweet timestamp
+
+        Returns:
+            Tuple of (price, data_quality_flag)
+        """
+        timestamp = normalize_timestamp(timestamp)
+        tweet_date = timestamp.date()
+
+        # Find first trading day AFTER tweet date
+        future_bars = daily_df[daily_df.index.date > tweet_date]
+
+        if not future_bars.empty:
+            next_day = future_bars.iloc[0]
+            return next_day["open"], "next_open_available"
+
+        return None, "next_open_unavailable"
+
     def _classify_return(self, return_value: Optional[float]) -> Optional[str]:
         """
         Classify return into 5 classes.
@@ -167,6 +195,58 @@ class TweetEnricher:
         else:  # > 2%
             return "strong_buy"
 
+    def _classify_return_3class(self, return_value: Optional[float]) -> Optional[str]:
+        """
+        Classify return into 3 classes (SELL/HOLD/BUY).
+
+        Thresholds: SELL < -0.5%, HOLD -0.5% to +0.5%, BUY > +0.5%
+        Same thresholds used for both 1hr and 1day labels.
+
+        Args:
+            return_value: Return value to classify
+
+        Returns:
+            Class label: 'SELL', 'HOLD', 'BUY'
+        """
+        if return_value is None:
+            return None
+
+        if return_value < -0.005:  # < -0.5%
+            return "SELL"
+        elif return_value < 0.005:  # -0.5% to 0.5%
+            return "HOLD"
+        else:  # > 0.5%
+            return "BUY"
+
+    def _is_reliable_label(self, price_at_tweet_flag: str, price_1hr_after_flag: str) -> bool:
+        """
+        Check if 1hr label is based on real intraday prices (not fallbacks).
+
+        Args:
+            price_at_tweet_flag: Data quality flag for price at tweet time
+            price_1hr_after_flag: Data quality flag for price 1hr after
+
+        Returns:
+            True if both prices are from real intraday data, False otherwise
+        """
+        unreliable_patterns = ["closed", "unavailable", "no_data"]
+        for pattern in unreliable_patterns:
+            if pattern in price_at_tweet_flag or pattern in price_1hr_after_flag:
+                return False
+        return True
+
+    def _compute_tweet_hash(self, text: str) -> str:
+        """
+        Compute hash of tweet text for duplicate detection in train/test splits.
+
+        Args:
+            text: Tweet text content
+
+        Returns:
+            12-character MD5 hash of the text
+        """
+        return hashlib.md5(text.encode()).hexdigest()[:12]
+
     def _get_empty_features(self) -> dict:
         """Return empty features dictionary."""
         return {
@@ -187,6 +267,16 @@ class TweetEnricher:
             "return_1hr": None,
             "return_1hr_adjusted": None,
             "label_5class": None,
+            # NEW: 3-class label and data quality
+            "label_3class": None,
+            "is_reliable_label": False,
+            "tweet_hash": None,
+            # NEW: 1-day labels (next open)
+            "price_next_open": None,
+            "price_next_open_flag": "no_data",
+            "return_to_next_open": None,
+            "label_1d_5class": None,
+            "label_1d_3class": None,
         }
 
     async def enrich_tweet(self, tweet_row: pd.Series, max_date: datetime) -> dict:
@@ -215,7 +305,10 @@ class TweetEnricher:
             self.logger.warning(f"No data available for {ticker}")
             return self._get_empty_features()
 
-        # CRITICAL: Slice to only include data UP TO tweet date (no look-ahead!)
+        # Keep full data for next-open calculation (includes future)
+        daily_df_for_next_open = daily_df_full.copy()
+
+        # CRITICAL: Slice to only include data UP TO tweet date (no look-ahead for features!)
         tweet_date = timestamp.date()
         daily_df = daily_df_full[daily_df_full.index.date <= tweet_date].copy()
 
@@ -328,6 +421,29 @@ class TweetEnricher:
         # Classify into 5 classes based on return_1hr_adjusted
         label_5class = self._classify_return(return_1hr_adjusted)
 
+        # Classify into 3 classes
+        label_3class = self._classify_return_3class(return_1hr_adjusted)
+
+        # Check if 1hr label is reliable (based on real intraday prices)
+        is_reliable_label = self._is_reliable_label(price_flag, price_1hr_flag)
+
+        # Compute tweet hash for duplicate detection in train/test splits
+        tweet_hash = self._compute_tweet_hash(tweet_row["text"])
+
+        # Get next trading day's open price for 1-day labels
+        price_next_open, price_next_open_flag = self.get_price_next_open(
+            daily_df_for_next_open, timestamp
+        )
+
+        # Calculate return to next open
+        return_to_next_open = None
+        if price_at_tweet and price_next_open:
+            return_to_next_open = (price_next_open - price_at_tweet) / price_at_tweet
+
+        # Classify 1-day labels (same thresholds as 1hr)
+        label_1d_5class = self._classify_return(return_to_next_open)
+        label_1d_3class = self._classify_return_3class(return_to_next_open)
+
         # Build result dictionary
         result = {
             "ticker": ticker,
@@ -347,6 +463,16 @@ class TweetEnricher:
             "return_1hr": return_1hr,
             "return_1hr_adjusted": return_1hr_adjusted,
             "label_5class": label_5class,
+            # NEW: 3-class label and data quality
+            "label_3class": label_3class,
+            "is_reliable_label": is_reliable_label,
+            "tweet_hash": tweet_hash,
+            # NEW: 1-day labels (next open)
+            "price_next_open": price_next_open,
+            "price_next_open_flag": price_next_open_flag,
+            "return_to_next_open": return_to_next_open,
+            "label_1d_5class": label_1d_5class,
+            "label_1d_3class": label_1d_3class,
         }
 
         return result
@@ -399,6 +525,14 @@ class TweetEnricher:
             "return_1hr",
             "return_1hr_adjusted",
             "label_5class",
+            "label_3class",             # NEW: 3-class label
+            "price_next_open",          # NEW: next trading day open
+            "price_next_open_flag",     # NEW: data quality flag
+            "return_to_next_open",      # NEW: return to next open
+            "label_1d_5class",          # NEW: 1-day 5-class label
+            "label_1d_3class",          # NEW: 1-day 3-class label
+            "is_reliable_label",        # NEW: data quality flag
+            "tweet_hash",               # NEW: for duplicate detection
             "return_1d",
             "volatility_7d",
             "relative_volume",

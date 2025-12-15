@@ -181,6 +181,8 @@ class DataCache:
                     if symbol not in incremental_info:
                         continue
                     cached_df, _ = incremental_info[symbol]
+                    # Normalize cached_df to ensure timezone-aware index for comparison
+                    cached_df = normalize_dataframe_timezone(cached_df)
                     cached_max_date = cached_df.index.max()
 
                     normalized_df = normalize_dataframe_timezone(df)
@@ -349,6 +351,8 @@ class DataCache:
                     if symbol not in incremental_info:
                         continue
                     cached_df, _ = incremental_info[symbol]
+                    # Normalize cached_df to ensure timezone-aware index for comparison
+                    cached_df = normalize_dataframe_timezone(cached_df)
                     cached_max_date = cached_df.index.max()
 
                     normalized_df = normalize_dataframe_timezone(df)

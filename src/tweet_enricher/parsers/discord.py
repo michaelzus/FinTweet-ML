@@ -336,7 +336,7 @@ class MessageProcessor:
         clean = "\n".join(line.strip() for line in clean.split("\n") if line.strip())
         clean = clean.strip()
 
-        # Remove escape characters
+        # Remove escape characters (Discord escapes special chars)
         clean = re.sub(r"\\([()[\]{}.,!?\-\'#+_])", r"\1", clean)
 
         # Replace newlines with spaces for CSV
@@ -369,6 +369,42 @@ class MessageProcessor:
         match = re.search(r"(https?://(?:twitter\.com|x\.com)/[^\s)]+)", text)
         return match.group(1) if match else ""
 
+    def is_english(self, text: str) -> bool:
+        """
+        Check if text is primarily English (no Hebrew/Arabic/other non-Latin scripts).
+
+        Args:
+            text: Text to check
+
+        Returns:
+            True if text appears to be English
+        """
+        if not text:
+            return False
+
+        # Count characters by type
+        latin_count = 0
+        non_latin_count = 0
+
+        for char in text:
+            # Skip whitespace, digits, punctuation
+            if char.isspace() or char.isdigit() or not char.isalpha():
+                continue
+
+            # Check if character is in Latin script (Basic Latin + Latin Extended)
+            # Include U+00AA (ª) and U+00BA (º) from Latin-1 Supplement
+            if ("\u0041" <= char <= "\u007A") or ("\u00C0" <= char <= "\u024F") or char in "\u00aa\u00ba":
+                latin_count += 1
+            else:
+                non_latin_count += 1
+
+        # If more than 20% non-Latin characters, consider it non-English
+        total_alpha = latin_count + non_latin_count
+        if total_alpha == 0:
+            return True  # No alphabetic characters (e.g., all numbers/symbols)
+
+        return (non_latin_count / total_alpha) < 0.2
+
     def is_valid(self, text: str) -> bool:
         """
         Check if text meets minimum quality standards.
@@ -379,7 +415,7 @@ class MessageProcessor:
         Returns:
             True if text is valid
         """
-        return bool(text and len(text) >= self.min_text_length)
+        return bool(text and len(text) >= self.min_text_length and self.is_english(text))
 
 
 class DiscordParser:
@@ -448,14 +484,63 @@ class DiscordParser:
                 return i
         return 0
 
+    def _clean_author(self, username: str) -> str:
+        """Remove service suffix from author name (e.g., '• TweetShift')."""
+        return username.split(" • ")[0].strip()
+
+    def _extract_content_from_embed(self, embed_text: str) -> str:
+        """Extract tweet content from inside an {Embed} block."""
+        lines = embed_text.strip().split("\n")
+        content_lines = []
+        skip_next_url = True  # Skip first URL line (tweet URL)
+
+        for line in lines:
+            line = line.strip()
+            # Skip author line: "Author (@handle) ✧" or "Author (@handle)"
+            if re.match(r"^[\w\s]+\(@\w+\)(\s*✧)?$", line):
+                continue
+            # Skip first URL line only (tweet URL), preserve subsequent URLs in content
+            if line.startswith("https://") or line.startswith("http://"):
+                if skip_next_url:
+                    skip_next_url = False
+                    continue
+                # Keep subsequent URLs - they may be part of the tweet content
+            # Skip footer patterns
+            if line in ["TweetShift", "X"] or line.startswith("TweetShift •"):
+                continue
+            # Skip empty lines at start
+            if not content_lines and not line:
+                continue
+            content_lines.append(line)
+
+        return "\n".join(content_lines)
+
     def _process_message(self, message: Dict) -> List[Dict[str, str]]:
         """Process a single message and extract data."""
         full_text = "".join(message["text_lines"]).strip()
 
-        # Extract components
+        # Split at {Embed} to handle duplicates correctly
+        if "{Embed}" in full_text:
+            parts = full_text.split("{Embed}", 1)
+            before_embed = parts[0].strip()
+            inside_embed = parts[1].strip() if len(parts) > 1 else ""
+
+            # Remove [Tweeted](...) link from before_embed
+            before_embed = re.sub(r"\[Tweeted\]\([^)]+\)\s*", "", before_embed).strip()
+
+            # If substantial content before {Embed}, use it (Pattern B - long tweets)
+            # Otherwise, extract from inside {Embed} (Pattern A - short tweets)
+            if len(before_embed) > 50:
+                content_text = before_embed
+            else:
+                content_text = self._extract_content_from_embed(inside_embed)
+        else:
+            content_text = full_text
+
+        # Extract components from full_text (for URL extraction)
         tickers = self.processor.extract_tickers(full_text)
         tweet_url = self.processor.extract_tweet_url(full_text)
-        clean_text = self.processor.clean_text(full_text)
+        clean_text = self.processor.clean_text(content_text)
 
         # Validate
         if not self.processor.is_valid(clean_text):
@@ -473,7 +558,7 @@ class DiscordParser:
                     result.append(
                         {
                             "timestamp": message["timestamp"],
-                            "author": message["username"],
+                            "author": self._clean_author(message["username"]),
                             "ticker": ticker,
                             "tweet_url": tweet_url,
                             "category": category,
@@ -562,4 +647,3 @@ class DiscordToCSVConverter:
             print(f"Removed {stats['duplicates']} duplicate messages")
 
         print(f"Written {stats['written']} unique messages to CSV")
-
