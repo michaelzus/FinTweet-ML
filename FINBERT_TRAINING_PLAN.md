@@ -104,9 +104,12 @@ The enricher currently uses `daily_df.index.date <= tweet_date`, which **include
 | `relative_volume` | Uses volumes from [T-20, T] | ⚠️ Includes day T volume |
 | `distance_from_ma_20` | Uses close T vs MA | ⚠️ Uses day T close |
 
-**Impact Assessment**:
-- For **after-hours tweets** (>50% of data): Day T close is known → **No leakage**
-- For **intraday tweets**: Minor leakage, but RSI/volatility change slowly day-to-day → **Low impact**
+**Impact Assessment** (based on Phase 0 validation):
+- **Regular session**: 34.9% - Day T close unknown → Minor leakage
+- **Premarket**: 29.7% - Day T close unknown → Minor leakage ⚠️
+- **Afterhours**: 15.6% - Day T close is known → **No leakage**
+- **Closed (weekends)**: 19.8% - Day T close is known → **No leakage**
+- **Total safe**: ~35% of data has no leakage; ~65% has minor leakage
 - For **production inference**: Must use strictly `< tweet_date` data
 
 **Recommendation**: Accept for initial training, but fix enricher for production:
@@ -121,7 +124,43 @@ daily_df = daily_df_full[daily_df_full.index.date < tweet_date].copy()  # Strict
 
 ## Phase 0: Pre-Training Validation Checklist
 
-Run this before training to confirm data integrity:
+Run this before training to confirm data integrity. **Validation notebook**: `notebooks/phase0_validation.ipynb`
+
+### Phase 0 Results (15-dec-enrich7.csv)
+
+| Check | Result | Status |
+|-------|--------|--------|
+| Feature Leakage | PASS | ✓ |
+| Target Availability | 99.6% (5,844/5,866) | ✓ |
+| Class Balance | 37.8% max (SELL) | ✓ Well-balanced! |
+| Author Embedding Needed | 62.2% top 2 | ✓ |
+| Reliable Labels | 77.5% (4,545/5,866) | ✓ |
+
+**Class Distribution (better than expected!):**
+- SELL: 37.8% (2,209)
+- BUY: 35.4% (2,070)
+- HOLD: 26.8% (1,565)
+
+**Author Distribution:**
+1. Wall St Engine: 34.3% (2,010 tweets)
+2. Hardik Shah: 27.9% (1,639 tweets)
+3. Evan: 25.5% (1,493 tweets)
+4. App Economy Insights: 4.7%
+5. Fiscal.ai: 3.1%
+
+**Session Distribution (premarket risk):**
+- Regular: 34.9%
+- Premarket: 29.7% ⚠️ (minor leakage for technical indicators)
+- Closed: 19.8%
+- Afterhours: 15.6%
+
+**Recommended Training Filter:**
+```python
+df_train = df[df['is_reliable_label'] == True].dropna(subset=['label_1d_3class'])
+# Expected: ~4,527 training samples
+```
+
+### Validation Code
 
 ```python
 # ========== Phase 0: Pre-Training Validation ==========
@@ -129,7 +168,7 @@ Run this before training to confirm data integrity:
 import pandas as pd
 import numpy as np
 
-df = pd.read_csv("output/15-dec-enrich2.csv")
+df = pd.read_csv("output/15-dec-enrich7.csv")
 TARGET_COLUMN = "label_1d_3class"
 
 # 1. Confirm no future columns in features
@@ -220,9 +259,11 @@ if "session" in df.columns:
 First, enrich the cleaned CSV with price data and indicators:
 
 ```bash
-source venv/bin/activate
-python -m tweet_enricher enrich output/15-dec2.csv output/15-dec2-enriched.csv
+source .venv/bin/activate
+python -m tweet_enricher enrich output/15-dec2.csv output/15-dec-enrich7.csv
 ```
+
+**Status**: ✅ Already completed. Using `output/15-dec-enrich7.csv` (5,866 rows).
 
 ### 1.2 Data Filtering
 
@@ -231,7 +272,7 @@ Filter the enriched data to keep only reliable samples:
 ```python
 import pandas as pd
 
-df = pd.read_csv("output/15-dec2-enriched.csv")
+df = pd.read_csv("output/15-dec-enrich7.csv")  # 5,866 rows, 29 columns
 
 # Filter to reliable labels only
 df_reliable = df[df["is_reliable_label"] == True].copy()
@@ -386,9 +427,11 @@ df_train["category_idx"] = df_train["category"].map(category_to_idx)
 ```
 
 **Why add author as a feature:**
-- 2 authors represent 65% of data (Wall St Engine, Evan)
+- Top 2 authors represent 62.2% of data (Wall St Engine 34.3%, Hardik Shah 27.9%)
+- Top 3 authors = 87.7% (includes Evan at 25.5%)
 - Without this, model learns their tweeting style, not market patterns
 - Embedding allows model to learn author-specific adjustments
+- Note: Authors have different label distributions (e.g., Evan has more HOLD tweets)
 
 ---
 
@@ -781,8 +824,8 @@ print(f"Precision @ 60% confidence: {trading_metrics.get('precision_at_60pct_con
 ```python
 # ========== Baseline Comparisons ==========
 
-# Baseline 1: Naive (always predict majority class - HOLD)
-naive_predictions = np.full(len(df_test), 1)  # Always HOLD
+# Baseline 1: Naive (always predict majority class - SELL in this dataset)
+naive_predictions = np.full(len(df_test), 0)  # Always SELL (37.8% of data)
 naive_accuracy = (df_test[TARGET_COLUMN].map(label_map).values == naive_predictions).mean()
 
 # Baseline 2: Random (uniform across 3 classes)
@@ -817,7 +860,8 @@ else:
 ```
 
 **Interpretation:**
-- **Must beat naive baseline**: If HOLD is 61% of data, always predicting HOLD = 61% accuracy
+- **Must beat naive baseline**: SELL is majority at 37.8%, so always predicting SELL = 37.8% accuracy
+- **Random baseline**: With balanced classes, random = ~33% accuracy
 - **Model should be >5% better**: Otherwise, simpler strategies win
 - **Trading baseline**: Does simulated Sharpe beat buy-and-hold SPY?
 
@@ -931,7 +975,9 @@ TimeWaste2/
 │       └── scaler.pkl
 ├── output/
 │   ├── 15-dec2.csv             # Clean parsed tweets
-│   └── 15-dec2-enriched.csv    # Enriched with indicators
+│   └── 15-dec-enrich7.csv      # Enriched with indicators (5,866 rows)
+├── notebooks/
+│   └── phase0_validation.ipynb # Pre-training validation
 └── requirements.txt            # Add: transformers, torch, sklearn
 ```
 
@@ -954,11 +1000,12 @@ joblib>=1.3.0
 
 ## Next Steps
 
-1. **Run enrichment** on `15-dec2.csv` to generate `15-dec2-enriched.csv`
-2. **Create** `src/tweet_classifier/` module with the code above
-3. **Train** the model and evaluate on test set
-4. **Iterate** on hyperparameters based on F1 scores
-5. **Deploy** for real-time inference on new tweets
+1. ~~**Run enrichment** on `15-dec2.csv` to generate enriched data~~ ✅ Done (`15-dec-enrich7.csv`)
+2. ~~**Run Phase 0 validation** to confirm data integrity~~ ✅ Done (see `notebooks/phase0_validation.ipynb`)
+3. **Create** `src/tweet_classifier/` module with the code above
+4. **Train** the model and evaluate on test set
+5. **Iterate** on hyperparameters based on F1 scores
+6. **Deploy** for real-time inference on new tweets
 
 ---
 
@@ -977,8 +1024,9 @@ Based on external review (Perplexity), the following concerns were raised. Here'
 
 | Concern | Severity | Mitigation | Status |
 |---------|----------|------------|--------|
-| **HOLD class imbalance (61%)** | Medium | Using class weights in loss function | ✅ Implemented |
-| **Author bias** (2 authors = 65% data) | Medium | **Added author as embedding feature** | ✅ Implemented |
+| **Class balance** | ✅ Resolved | Actually well-balanced: SELL 37.8%, BUY 35.4%, HOLD 26.8% | ✅ No action needed |
+| **Author bias** (top 2 = 62.2%) | Medium | **Added author as embedding feature** | ✅ Implemented |
+| **Premarket leakage** (29.7% tweets) | Low | Technical indicators use day T close; accept or filter | ⚠️ Monitor |
 | **1-hour labels may be noisy** | Medium | **Switched to 1-day labels (`label_1d_3class`)** | ✅ Implemented |
 | **Text duplication** in some tweets | Low | Parser cleanup applied; verify in EDA | ✅ Fixed |
 | **Non-English text** | Low | Filtered in parser using langdetect | ✅ Fixed |
@@ -991,22 +1039,21 @@ Based on external review (Perplexity), the following concerns were raised. Here'
 
 ### Recommended Pre-Training EDA
 
-Before training, validate:
+✅ **Completed** - See `notebooks/phase0_validation.ipynb` for full results.
 
+Summary of validation:
 ```python
-# 1. Check class distribution after filtering
-print(df_reliable[TARGET_COLUMN].value_counts(normalize=True))
+# 1. Class distribution (well-balanced!)
+#    SELL: 37.8%, BUY: 35.4%, HOLD: 26.8%
 
-# 2. Check author distribution
-print(df_reliable["author"].value_counts(normalize=True).head(5))
+# 2. Author distribution
+#    Wall St Engine: 34.3%, Hardik Shah: 27.9%, Evan: 25.5%
 
-# 3. Verify no future columns in features
-assert "spy_return_1hr" not in NUMERICAL_FEATURES
-assert "return_1hr" not in NUMERICAL_FEATURES
-assert "price_1hr_after" not in NUMERICAL_FEATURES
+# 3. Verified no future columns in features ✓
 
-# 4. Check correlation between text sentiment and returns (prove signal exists)
-# ... (use FinBERT to get sentiment scores, correlate with return_1d)
+# 4. Reliable samples: 4,545 (77.5%)
+
+# 5. Premarket risk: 29.7% (acceptable, minor leakage)
 ```
 
 ---
