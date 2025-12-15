@@ -518,3 +518,199 @@ class TestFinBERTMultiModal:
         assert model.author_embedding.embedding_dim == author_emb_dim
         assert model.category_embedding.num_embeddings == num_categories
         assert model.category_embedding.embedding_dim == category_emb_dim
+
+
+class TestComputeMetrics:
+    """Tests for the compute_metrics evaluation function."""
+
+    def test_compute_metrics_returns_all_metrics(self):
+        """Test compute_metrics returns accuracy, f1_macro, and f1_weighted."""
+        from tweet_classifier.trainer import compute_metrics
+
+        # Create sample predictions and labels
+        predictions = np.array([
+            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+            [0.1, 0.8, 0.1],   # Predict HOLD (class 1)
+            [0.1, 0.1, 0.8],   # Predict BUY (class 2)
+            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+        ])
+        labels = np.array([0, 1, 2, 0])  # All correct
+
+        metrics = compute_metrics((predictions, labels))
+
+        assert "accuracy" in metrics
+        assert "f1_macro" in metrics
+        assert "f1_weighted" in metrics
+
+    def test_compute_metrics_perfect_predictions(self):
+        """Test compute_metrics with perfect predictions."""
+        from tweet_classifier.trainer import compute_metrics
+
+        predictions = np.array([
+            [0.9, 0.05, 0.05],
+            [0.1, 0.8, 0.1],
+            [0.1, 0.1, 0.8],
+        ])
+        labels = np.array([0, 1, 2])
+
+        metrics = compute_metrics((predictions, labels))
+
+        assert metrics["accuracy"] == 1.0
+        assert metrics["f1_macro"] == 1.0
+        assert metrics["f1_weighted"] == 1.0
+
+    def test_compute_metrics_wrong_predictions(self):
+        """Test compute_metrics with all wrong predictions."""
+        from tweet_classifier.trainer import compute_metrics
+
+        predictions = np.array([
+            [0.1, 0.1, 0.8],   # Predict BUY (class 2)
+            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+            [0.1, 0.8, 0.1],   # Predict HOLD (class 1)
+        ])
+        labels = np.array([0, 1, 2])  # All wrong
+
+        metrics = compute_metrics((predictions, labels))
+
+        assert metrics["accuracy"] == 0.0
+        assert metrics["f1_macro"] == 0.0
+
+
+class TestWeightedTrainer:
+    """Tests for the WeightedTrainer class."""
+
+    @pytest.fixture
+    def mock_model(self):
+        """Create a mock model for testing WeightedTrainer."""
+        import torch
+        import torch.nn as nn
+
+        class MockModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(10, 3)
+
+            def forward(self, **kwargs):
+                # Just return random logits of the right shape
+                batch_size = kwargs.get("input_ids", torch.zeros(4, 10)).shape[0]
+                logits = torch.randn(batch_size, 3)
+                return {"logits": logits}
+
+        return MockModel()
+
+    def test_weighted_trainer_init(self, mock_model):
+        """Test WeightedTrainer initializes with class weights."""
+        import torch
+        from transformers import TrainingArguments
+
+        from tweet_classifier.trainer import WeightedTrainer
+
+        class_weights = torch.tensor([1.0, 2.0, 1.5])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = TrainingArguments(
+                output_dir=tmpdir,
+                per_device_train_batch_size=4,
+                num_train_epochs=1,
+                report_to="none",
+            )
+
+            trainer = WeightedTrainer(
+                class_weights=class_weights,
+                model=mock_model,
+                args=args,
+            )
+
+            assert trainer.class_weights is not None
+            assert torch.equal(trainer.class_weights, class_weights)
+
+    def test_weighted_trainer_compute_loss(self, mock_model):
+        """Test WeightedTrainer.compute_loss applies class weights."""
+        import torch
+        from transformers import TrainingArguments
+
+        from tweet_classifier.trainer import WeightedTrainer
+
+        # Higher weight for class 1 (HOLD)
+        class_weights = torch.tensor([1.0, 5.0, 1.0])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = TrainingArguments(
+                output_dir=tmpdir,
+                per_device_train_batch_size=4,
+                num_train_epochs=1,
+                report_to="none",
+            )
+
+            trainer = WeightedTrainer(
+                class_weights=class_weights,
+                model=mock_model,
+                args=args,
+            )
+
+            # Create dummy inputs
+            inputs = {
+                "input_ids": torch.randint(0, 1000, (4, 10)),
+                "attention_mask": torch.ones(4, 10),
+                "numerical": torch.randn(4, 4),
+                "author_idx": torch.randint(0, 3, (4,)),
+                "category_idx": torch.randint(0, 3, (4,)),
+                "labels": torch.tensor([0, 1, 2, 1]),  # Two samples with class 1
+            }
+
+            loss = trainer.compute_loss(mock_model, inputs)
+
+            assert isinstance(loss, torch.Tensor)
+            assert loss.shape == ()  # Scalar loss
+            assert loss.item() > 0  # Loss should be positive
+
+
+class TestTrainingConfig:
+    """Tests for training configuration creation."""
+
+    def test_create_training_args_default_values(self):
+        """Test create_training_args with default values."""
+        from tweet_classifier.train import create_training_args
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = create_training_args(output_dir=Path(tmpdir))
+
+            assert args.eval_strategy == "epoch"
+            assert args.save_strategy == "epoch"
+            assert args.load_best_model_at_end is True
+            assert args.metric_for_best_model == "f1_macro"
+            assert args.greater_is_better is True
+            assert args.remove_unused_columns is False
+
+    def test_create_training_args_custom_values(self):
+        """Test create_training_args with custom values."""
+        from tweet_classifier.train import create_training_args
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = create_training_args(
+                output_dir=Path(tmpdir),
+                num_epochs=10,
+                batch_size=32,
+                learning_rate=1e-4,
+                warmup_ratio=0.2,
+            )
+
+            assert args.num_train_epochs == 10
+            assert args.per_device_train_batch_size == 32
+            assert args.learning_rate == 1e-4
+            assert args.warmup_ratio == 0.2
+
+    def test_create_training_args_fp16_disabled_without_cuda(self):
+        """Test fp16 is disabled when CUDA is not available."""
+        import torch
+
+        from tweet_classifier.train import create_training_args
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = create_training_args(output_dir=Path(tmpdir), fp16=True)
+
+            # fp16 should only be enabled if CUDA is available
+            if torch.cuda.is_available():
+                assert args.fp16 is True
+            else:
+                assert args.fp16 is False

@@ -446,7 +446,7 @@ df_train["category_idx"] = df_train["category"].map(category_to_idx)
 | TweetDataset | `dataset.py` | ✅ Multi-modal dataset with tokenization |
 | Categorical encoding | `dataset.py` | ✅ `create_categorical_encodings()`, `encode_categorical()` |
 | Scaler persistence | `dataset.py` | ✅ `save_scaler()`, `load_scaler()`, `save_preprocessing_artifacts()` |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 tests passing (Phase 2) |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 data/dataset tests |
 
 **Usage example:**
 ```python
@@ -579,7 +579,7 @@ class FinBERTMultiModal(nn.Module):
 | Forward method | `model.py` | ✅ Returns dict with `logits` and optional `loss` |
 | BERT freezing | `model.py` | ✅ `freeze_bert` parameter for fine-tuning control |
 | Config serialization | `model.py` | ✅ `get_config()` method for saving model config |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 7 new tests (23 total) |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 7 model tests |
 
 **Usage example:**
 ```python
@@ -613,6 +613,19 @@ loss = output.get("loss")   # Only if labels provided
 
 ## Phase 4: Training
 
+✅ **Phase 4 Complete** - Training pipeline implemented in `src/tweet_classifier/trainer.py` and `src/tweet_classifier/train.py`
+
+### Phase 4 Implementation Status
+
+| Component | File | Status |
+|-----------|------|--------|
+| WeightedTrainer | `trainer.py` | ✅ Custom Trainer with class-weighted cross-entropy loss |
+| compute_metrics | `trainer.py` | ✅ Returns accuracy, f1_macro, f1_weighted |
+| create_training_args | `train.py` | ✅ Configurable TrainingArguments builder |
+| train() | `train.py` | ✅ Full training pipeline with artifact saving |
+| CLI interface | `train.py` | ✅ `python -m tweet_classifier.train --help` |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 8 new tests (31 total) |
+
 ### 4.1 Training Configuration
 
 ```python
@@ -620,7 +633,7 @@ from transformers import TrainingArguments
 
 training_args = TrainingArguments(
     output_dir="models/finbert-tweet-classifier",
-    evaluation_strategy="epoch",
+    eval_strategy="epoch",
     save_strategy="epoch",
     learning_rate=2e-5,
     per_device_train_batch_size=16,
@@ -630,9 +643,12 @@ training_args = TrainingArguments(
     warmup_ratio=0.1,
     load_best_model_at_end=True,
     metric_for_best_model="f1_macro",
-    fp16=True,  # Mixed precision for speed
+    greater_is_better=True,
+    fp16=True,  # Mixed precision for speed (auto-disabled if no CUDA)
     logging_steps=100,
     save_total_limit=2,
+    report_to="none",
+    remove_unused_columns=False,
 )
 ```
 
@@ -645,15 +661,19 @@ import torch.nn.functional as F
 class WeightedTrainer(Trainer):
     """Trainer with class-weighted loss for imbalanced data."""
     
-    def __init__(self, class_weights, *args, **kwargs):
+    def __init__(self, class_weights: torch.Tensor, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.class_weights = class_weights.to(self.args.device)
+        self.class_weights = class_weights
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.pop("labels")
         outputs = model(**inputs)
+        logits = outputs["logits"]
         
-        loss = F.cross_entropy(outputs, labels, weight=self.class_weights)
+        reduction = "sum" if num_items_in_batch is not None else "mean"
+        loss = F.cross_entropy(logits, labels, weight=self.class_weights.to(logits.device), reduction=reduction)
+        if num_items_in_batch is not None:
+            loss = loss / num_items_in_batch
         
         return (loss, outputs) if return_outputs else loss
 ```
@@ -661,7 +681,7 @@ class WeightedTrainer(Trainer):
 ### 4.3 Evaluation Metrics
 
 ```python
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.metrics import accuracy_score, f1_score
 import numpy as np
 
 def compute_metrics(eval_pred):
@@ -675,50 +695,38 @@ def compute_metrics(eval_pred):
     }
 ```
 
-### 4.4 Training Loop
+### 4.4 CLI Usage
+
+```bash
+# Activate venv and run training
+source .venv/bin/activate
+python -m tweet_classifier.train \
+    --data-path output/15-dec-enrich7.csv \
+    --output-dir models/finbert-tweet-classifier \
+    --epochs 5 \
+    --batch-size 16 \
+    --learning-rate 2e-5 \
+    --freeze-bert  # Optional: freeze BERT for faster training
+```
+
+### 4.5 Programmatic Usage
 
 ```python
-# Initialize model
-model = FinBERTMultiModal(
-    num_numerical_features=len(NUMERICAL_FEATURES),
-    num_authors=num_authors,
-    num_categories=num_categories,
-    num_classes=3,
-    freeze_bert=False,  # Fine-tune BERT
-    dropout=0.3
-)
+from tweet_classifier import train, WeightedTrainer, compute_metrics
 
-# Create datasets
-train_dataset = TweetDataset(
-    df_train["text"], X_train_num,
-    df_train["author_idx"].values,
-    df_train["category_idx"].values,
-    df_train[TARGET_COLUMN].map(label_map).values,
-    tokenizer
-)
-val_dataset = TweetDataset(
-    df_val["text"], X_val_num,
-    df_val["author_idx"].values,
-    df_val["category_idx"].values,
-    df_val[TARGET_COLUMN].map(label_map).values,
-    tokenizer
-)
+# Run training with defaults
+train()
 
-# Initialize trainer
-trainer = WeightedTrainer(
-    class_weights=class_weights,
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=val_dataset,
-    compute_metrics=compute_metrics,
+# Or with custom parameters
+train(
+    data_path="output/15-dec-enrich7.csv",
+    output_dir="models/finbert-tweet-classifier",
+    num_epochs=5,
+    batch_size=16,
+    learning_rate=2e-5,
+    freeze_bert=False,
+    dropout=0.3,
 )
-
-# Train
-trainer.train()
-
-# Save
-trainer.save_model("models/finbert-tweet-classifier/final")
 ```
 
 ---
@@ -728,12 +736,14 @@ trainer.save_model("models/finbert-tweet-classifier/final")
 ### 5.1 Test Set Evaluation
 
 ```python
+from tweet_classifier.config import LABEL_MAP
+
 # Evaluate on test set
 test_dataset = TweetDataset(
     df_test["text"], X_test_num,
     df_test["author_idx"].values,
     df_test["category_idx"].values,
-    df_test[TARGET_COLUMN].map(label_map).values,
+    df_test[TARGET_COLUMN].map(LABEL_MAP).values,
     tokenizer
 )
 
@@ -746,7 +756,7 @@ print(f"Test F1 (macro): {results.metrics['test_f1_macro']:.4f}")
 # Detailed classification report
 preds = np.argmax(results.predictions, axis=1)
 print(classification_report(
-    df_test[TARGET_COLUMN].map(label_map).values,
+    df_test[TARGET_COLUMN].map(LABEL_MAP).values,
     preds,
     target_names=["SELL", "HOLD", "BUY"]
 ))
@@ -759,7 +769,9 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-cm = confusion_matrix(df_test[TARGET_COLUMN].map(label_map).values, preds)
+from tweet_classifier.config import LABEL_MAP
+
+cm = confusion_matrix(df_test[TARGET_COLUMN].map(LABEL_MAP).values, preds)
 plt.figure(figsize=(8, 6))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=["SELL", "HOLD", "BUY"],
@@ -885,10 +897,11 @@ print(f"Precision @ 60% confidence: {trading_metrics.get('precision_at_60pct_con
 
 ```python
 # ========== Baseline Comparisons ==========
+from tweet_classifier.config import LABEL_MAP
 
 # Baseline 1: Naive (always predict majority class - SELL in this dataset)
 naive_predictions = np.full(len(df_test), 0)  # Always SELL (37.8% of data)
-naive_accuracy = (df_test[TARGET_COLUMN].map(label_map).values == naive_predictions).mean()
+naive_accuracy = (df_test[TARGET_COLUMN].map(LABEL_MAP).values == naive_predictions).mean()
 
 # Baseline 2: Random (uniform across 3 classes)
 random_accuracy = 1/3  # Expected accuracy
@@ -1024,24 +1037,25 @@ print(f"Signal: {signal}, Confidence: {confidence}")
 TimeWaste2/
 ├── src/
 │   └── tweet_enricher/              # Existing enrichment pipeline
-│   └── tweet_classifier/            # ✅ Training code (Phase 3 complete)
+│   └── tweet_classifier/            # ✅ Training code (Phase 4 complete)
 │       ├── __init__.py              # ✅ Module exports
 │       ├── config.py                # ✅ Global configuration constants
 │       ├── dataset.py               # ✅ TweetDataset + scaler persistence
 │       ├── model.py                 # ✅ FinBERTMultiModal class
+│       ├── trainer.py               # ✅ WeightedTrainer + compute_metrics
+│       ├── train.py                 # ✅ Training script with CLI
 │       ├── data/
 │       │   ├── __init__.py          # ✅ Data submodule exports
 │       │   ├── loader.py            # ✅ Data loading + filtering
 │       │   ├── splitter.py          # ✅ Hash-based splitting
 │       │   └── weights.py           # ✅ Class weight computation
-│       ├── train.py                 # TODO: Training script
 │       └── predict.py               # TODO: Inference utilities
 ├── models/
 │   └── finbert-tweet-classifier/    # Created during training
-│       ├── config.json
-│       ├── pytorch_model.bin
-│       ├── scaler.pkl
-│       └── encodings.pkl
+│       ├── final/                   # Best model checkpoint
+│       ├── model_config.json        # Model architecture config
+│       ├── scaler.pkl               # Fitted StandardScaler
+│       └── encodings.pkl            # Author/category mappings
 ├── output/
 │   ├── 15-dec2.csv                  # Clean parsed tweets
 │   └── 15-dec-enrich7.csv           # Enriched with indicators (5,866 rows)
@@ -1049,7 +1063,7 @@ TimeWaste2/
 │   ├── phase0_validation.ipynb      # ✅ Pre-training validation
 │   └── phase2_feature_engineering.ipynb  # ✅ Feature engineering verification
 ├── tests/
-│   └── test_tweet_classifier.py     # ✅ Unit tests (23 tests)
+│   └── test_tweet_classifier.py     # ✅ Unit tests (31 tests)
 └── pyproject.toml                   # Dependencies included
 ```
 
@@ -1057,15 +1071,17 @@ TimeWaste2/
 
 ## Dependencies
 
-Add to `requirements.txt`:
+Add to `requirements.txt` (already in `pyproject.toml`):
 
 ```
 transformers>=4.30.0
 torch>=2.0.0
+accelerate>=0.26.0  # Required for HuggingFace Trainer
 datasets>=2.14.0
 scikit-learn>=1.3.0
 seaborn>=0.12.0
 joblib>=1.3.0
+scipy>=1.11.0
 ```
 
 ---
@@ -1076,9 +1092,14 @@ joblib>=1.3.0
 2. ~~**Run Phase 0 validation** to confirm data integrity~~ ✅ Done (see `notebooks/phase0_validation.ipynb`)
 3. ~~**Create** `src/tweet_classifier/` module~~ ✅ Done (Phase 2 feature engineering complete)
 4. ~~**Implement** `FinBERTMultiModal` model class~~ ✅ Done (Phase 3 complete)
-5. **Train** the model and evaluate on test set (Phase 4-5)
-6. **Iterate** on hyperparameters based on F1 scores
-7. **Deploy** for real-time inference on new tweets (Phase 6)
+5. ~~**Implement training pipeline** with WeightedTrainer~~ ✅ Done (Phase 4 complete)
+6. **Run training** and evaluate on test set (Phase 5):
+   ```bash
+   source .venv/bin/activate
+   python -m tweet_classifier.train --epochs 5 --batch-size 16
+   ```
+7. **Iterate** on hyperparameters based on F1 scores
+8. **Deploy** for real-time inference on new tweets (Phase 6)
 
 ---
 

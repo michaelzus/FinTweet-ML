@@ -7,6 +7,7 @@ This module provides utilities for:
 - PyTorch Dataset for multi-modal training
 - Preprocessing artifact persistence (scaler, encodings)
 - FinBERTMultiModal model for classification
+- Training with class-weighted loss
 """
 
 from tweet_classifier.config import (
@@ -29,6 +30,8 @@ from tweet_classifier.dataset import (
     save_scaler,
 )
 from tweet_classifier.model import FinBERTMultiModal
+from tweet_classifier.train import create_training_args, train
+from tweet_classifier.trainer import WeightedTrainer, compute_metrics
 
 __all__ = [
     # Config
@@ -44,6 +47,11 @@ __all__ = [
     "encode_categorical",
     # Model
     "FinBERTMultiModal",
+    # Training
+    "WeightedTrainer",
+    "compute_metrics",
+    "create_training_args",
+    "train",
     # Persistence
     "save_scaler",
     "load_scaler",
