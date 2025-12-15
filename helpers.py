@@ -7,11 +7,83 @@ and other helper operations.
 
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import List, Optional
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Shared data directory for daily OHLCV data (feather format)
+DAILY_DATA_DIR = Path("data/daily")
+
+# Tickers that consistently fail to fetch from IBKR API
+# These include: Class A/B shares, tickers with naming issues, and others that timeout
+EXCLUDED_TICKERS = {
+    # Class A/B shares and special share classes
+    "BRK-B", "BF-B", "BF-A", "CWEN-A", "HEI-A", "LEN-B", "UHAL-B",
+    # Tickers with naming/symbol issues
+    "LNW", "DNB", "CCCS", "COOP", "IPG", "K", "INFA",
+    # Tickers that consistently timeout (added from recent errors)
+    "WDAY", "NDAQ", "FHN", "LKQ", "ABT", "ED", "COO", "UGI", "SYF",
+}
+
+
+def save_daily_data(symbol: str, df: pd.DataFrame, data_dir: Path = DAILY_DATA_DIR) -> None:
+    """
+    Save daily OHLCV data to feather format.
+
+    Args:
+        symbol: Stock ticker symbol
+        df: DataFrame with OHLCV data (index should be 'date')
+        data_dir: Directory to save feather files (default: data/daily)
+    """
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = data_dir / f"{symbol}.feather"
+
+        # Reset index to save it as a column (Feather doesn't preserve index)
+        df_to_save = df.reset_index()
+
+        # Ensure first column is named 'date'
+        if df_to_save.columns[0] != 'date':
+            df_to_save.columns = ['date'] + list(df_to_save.columns[1:])
+
+        df_to_save.to_feather(cache_path)
+        logger.debug(f"Saved {len(df)} daily bars to {cache_path}")
+
+    except Exception as e:
+        logger.error(f"Error saving daily data for {symbol}: {e}")
+
+
+def load_daily_data(symbol: str, data_dir: Path = DAILY_DATA_DIR) -> Optional[pd.DataFrame]:
+    """
+    Load daily OHLCV data from feather format.
+
+    Args:
+        symbol: Stock ticker symbol
+        data_dir: Directory containing feather files (default: data/daily)
+
+    Returns:
+        DataFrame with OHLCV data (index is 'date'), or None if not found
+    """
+    cache_path = data_dir / f"{symbol}.feather"
+
+    if not cache_path.exists():
+        return None
+
+    try:
+        df = pd.read_feather(cache_path)
+
+        # Set 'date' as index
+        if 'date' in df.columns:
+            df = df.set_index('date')
+
+        logger.debug(f"Loaded {len(df)} daily bars from {cache_path}")
+        return df
+
+    except Exception as e:
+        logger.warning(f"Failed to load daily data for {symbol}: {e}")
+        return None
 
 
 def fetch_sp500_tickers() -> List[str]:
@@ -48,16 +120,13 @@ def fetch_sp500_tickers() -> List[str]:
         tickers = sp500_table["Symbol"].tolist()
 
         # Clean tickers (remove any special characters that IB might not recognize)
-        # Also exclude problematic tickers that always fail
-        excluded_tickers = {"BRK-B", "BF-B"}
-
         cleaned_tickers = []
         for ticker in tickers:
             if pd.notna(ticker):  # Check if not NaN
                 ticker_str = str(ticker).replace(".", "-").strip()
                 if ticker_str and ticker_str.upper() != "NAN":  # Filter empty and NaN strings
-                    # Exclude problematic tickers
-                    if ticker_str not in excluded_tickers:
+                    # Exclude problematic tickers (using shared constant)
+                    if ticker_str not in EXCLUDED_TICKERS:
                         cleaned_tickers.append(ticker_str)
                     else:
                         logger.debug(f"Excluding problematic ticker: {ticker_str}")
@@ -103,20 +172,14 @@ def fetch_russell1000_tickers() -> List[str]:
         symbol_column = "Symbol" if "Symbol" in component_table.columns else "Ticker"
         tickers = component_table[symbol_column].tolist()
 
-        # Exclude problematic tickers (Class A/B shares and others that fail)
-        excluded_tickers = {
-            "BRK-B", "BF-B", "BF-A", "CWEN-A", "HEI-A", "LEN-B", "UHAL-B",
-            "LNW", "DNB", "CCCS", "COOP"
-        }
-
         # Clean tickers
         cleaned_tickers = []
         for ticker in tickers:
             if pd.notna(ticker):
                 ticker_str = str(ticker).replace(".", "-").strip()
                 if ticker_str and ticker_str.upper() != "NAN":
-                    # Exclude problematic tickers and anything with -A or -B suffix
-                    if ticker_str not in excluded_tickers and not ticker_str.endswith(("-A", "-B")):
+                    # Exclude problematic tickers (using shared constant) and anything with -A or -B suffix
+                    if ticker_str not in EXCLUDED_TICKERS and not ticker_str.endswith(("-A", "-B")):
                         cleaned_tickers.append(ticker_str)
                     else:
                         logger.debug(f"Excluding problematic ticker: {ticker_str}")
@@ -126,26 +189,6 @@ def fetch_russell1000_tickers() -> List[str]:
 
     except Exception as e:
         raise Exception(f"Failed to fetch Russell 1000 tickers: {e}")
-
-
-def save_to_csv(data_dict: Dict[str, pd.DataFrame], output_dir: str) -> None:
-    """
-    Save DataFrames to separate CSV files per ticker.
-
-    Args:
-        data_dict: Dictionary mapping symbols to DataFrames
-        output_dir: Output directory path for CSV files
-    """
-    try:
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        for symbol, df in data_dict.items():
-            output_file = output_path / f"{symbol}.csv"
-            df.to_csv(output_file, index=False)
-            logger.debug(f"Data for {symbol} saved to {output_file}")
-    except Exception as e:
-        logger.error(f"Error saving to CSV: {e}")
 
 
 def read_tickers_from_csv(csv_file: str, column_name: str = "symbol") -> List[str]:
@@ -186,15 +229,15 @@ def read_tickers_from_csv(csv_file: str, column_name: str = "symbol") -> List[st
         raise
 
 
-def filter_tickers_by_volume(data_dir: str, min_avg_volume: float = 1_000_000) -> List[str]:
+def filter_tickers_by_volume(data_dir: str = "data/daily", min_avg_volume: float = 1_000_000) -> List[str]:
     """
     Filter tickers based on average daily trading volume.
 
-    Reads CSV files from the specified directory, calculates average daily volume
+    Reads feather files from the specified directory, calculates average daily volume
     for each ticker, and returns tickers with average volume above threshold.
 
     Args:
-        data_dir: Directory containing CSV files with historical data
+        data_dir: Directory containing feather files with historical data (default: data/daily)
         min_avg_volume: Minimum average daily volume threshold (default: 1,000,000)
 
     Returns:
@@ -209,28 +252,28 @@ def filter_tickers_by_volume(data_dir: str, min_avg_volume: float = 1_000_000) -
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
         filtered_tickers = []
-        csv_files = list(data_path.glob("*.csv"))
+        feather_files = list(data_path.glob("*.feather"))
 
-        if not csv_files:
-            logger.warning(f"No CSV files found in {data_dir}")
+        if not feather_files:
+            logger.warning(f"No feather files found in {data_dir}")
             return []
 
-        logger.info(f"Analyzing {len(csv_files)} CSV files in {data_dir}...")
+        logger.info(f"Analyzing {len(feather_files)} feather files in {data_dir}...")
 
-        for csv_file in csv_files:
+        for feather_file in feather_files:
             try:
-                df = pd.read_csv(csv_file)
+                df = pd.read_feather(feather_file)
 
                 # Check if volume column exists
                 if "volume" not in df.columns:
-                    logger.warning(f"No 'volume' column in {csv_file.name}, skipping")
+                    logger.warning(f"No 'volume' column in {feather_file.name}, skipping")
                     continue
 
                 # Calculate average volume
                 avg_volume = df["volume"].mean()
 
-                # Extract symbol from filename (e.g., AAPL.csv -> AAPL)
-                symbol = csv_file.stem
+                # Extract symbol from filename (e.g., AAPL.feather -> AAPL)
+                symbol = feather_file.stem
 
                 if avg_volume >= min_avg_volume:
                     filtered_tickers.append(symbol)
@@ -239,7 +282,7 @@ def filter_tickers_by_volume(data_dir: str, min_avg_volume: float = 1_000_000) -
                     logger.debug(f"{symbol}: avg volume = {avg_volume:,.0f} (FAIL)")
 
             except Exception as e:
-                logger.error(f"Error processing {csv_file.name}: {e}")
+                logger.error(f"Error processing {feather_file.name}: {e}")
                 continue
 
         logger.info(f"Found {len(filtered_tickers)} tickers with avg volume >= {min_avg_volume:,.0f}")

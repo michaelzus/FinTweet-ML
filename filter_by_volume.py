@@ -8,7 +8,7 @@ and optionally save the filtered list to a CSV file.
 import argparse
 import logging
 
-from helpers import filter_tickers_by_volume
+from helpers import filter_tickers_by_volume, DAILY_DATA_DIR
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -26,8 +26,8 @@ def main() -> None:
 
     parser.add_argument(
         "--data-dir",
-        default="data",
-        help="Directory containing CSV files with historical data. Default: data"
+        default=str(DAILY_DATA_DIR),
+        help=f"Directory containing feather files with historical data. Default: {DAILY_DATA_DIR}"
     )
 
     parser.add_argument(
@@ -68,7 +68,7 @@ def main() -> None:
 
     except FileNotFoundError as e:
         logger.error(f"Error: {e}")
-        logger.error(f"Make sure the data directory '{args.data_dir}' exists and contains CSV files.")
+        logger.error(f"Make sure the data directory '{args.data_dir}' exists and contains feather files.")
     except Exception as e:
         logger.error(f"Error: {e}")
 

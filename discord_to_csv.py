@@ -21,6 +21,8 @@ from typing import List, Dict, Set, Optional
 from collections import Counter
 import pytz
 
+from helpers import EXCLUDED_TICKERS
+
 
 class MessageCategorizer:
     """Categorizes messages into predefined categories based on keywords."""
@@ -288,7 +290,8 @@ class DiscordParser:
         result = []
         if tickers:
             for ticker in tickers:
-                if ticker:
+                # Skip excluded tickers (problematic symbols that consistently fail in IBKR)
+                if ticker and ticker not in EXCLUDED_TICKERS:
                     result.append({
                         'timestamp': message['timestamp'],
                         'author': message['username'],

@@ -32,6 +32,10 @@ output/*.csv
 # Data files (keep structure, ignore CSVs in data/)
 data/*.csv
 
+# Cache directories (persistent disk cache)
+data/daily/
+data/intraday/
+
 # Test outputs
 *_test.csv
 *_new.csv

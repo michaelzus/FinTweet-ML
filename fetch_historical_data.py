@@ -8,7 +8,7 @@ import argparse
 import asyncio
 import logging
 
-from helpers import fetch_sp500_tickers, fetch_russell1000_tickers, save_to_csv
+from helpers import fetch_sp500_tickers, fetch_russell1000_tickers, save_daily_data, DAILY_DATA_DIR
 from ib_fetcher import IBHistoricalDataFetcher
 
 # Module-level logger
@@ -44,7 +44,9 @@ async def main() -> None:
         help="Bar size (e.g., '1 day', '1 hour', '30 mins', '5 mins', '1 min'). Default: 1 day",
     )
 
-    parser.add_argument("--output-dir", default="data", help="Output directory for CSV files. Default: data")
+    parser.add_argument(
+        "--output-dir", default=str(DAILY_DATA_DIR), help=f"Output directory for feather files. Default: {DAILY_DATA_DIR}"
+    )
 
     parser.add_argument("--batch-size", type=int, default=200, help="Number of symbols to fetch per batch. Default: 200")
 
@@ -125,14 +127,19 @@ async def main() -> None:
         )
 
         if data_dict:
-            # Save to CSV files (one per ticker)
-            save_to_csv(data_dict, args.output_dir)
+            # Save to feather files (one per ticker)
+            from pathlib import Path
+
+            output_dir = Path(args.output_dir)
+            for symbol, df in data_dict.items():
+                save_daily_data(symbol, df, output_dir)
+
             logger.info("Summary:")
             total_records = sum(len(df) for df in data_dict.values())
             logger.info(f"Total records: {total_records}")
             logger.info(f"Files saved to: {args.output_dir}/")
             for symbol, df in data_dict.items():
-                logger.debug(f"  - {symbol}.csv ({len(df)} bars)")
+                logger.debug(f"  - {symbol}.feather ({len(df)} bars)")
         else:
             logger.warning("No data fetched")
 
