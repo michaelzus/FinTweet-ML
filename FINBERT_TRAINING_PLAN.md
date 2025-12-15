@@ -446,7 +446,7 @@ df_train["category_idx"] = df_train["category"].map(category_to_idx)
 | TweetDataset | `dataset.py` | ✅ Multi-modal dataset with tokenization |
 | Categorical encoding | `dataset.py` | ✅ `create_categorical_encodings()`, `encode_categorical()` |
 | Scaler persistence | `dataset.py` | ✅ `save_scaler()`, `load_scaler()`, `save_preprocessing_artifacts()` |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 data/dataset tests |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 tests for data/dataset |
 
 **Usage example:**
 ```python
@@ -579,7 +579,7 @@ class FinBERTMultiModal(nn.Module):
 | Forward method | `model.py` | ✅ Returns dict with `logits` and optional `loss` |
 | BERT freezing | `model.py` | ✅ `freeze_bert` parameter for fine-tuning control |
 | Config serialization | `model.py` | ✅ `get_config()` method for saving model config |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 7 model tests |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 7 tests for model |
 
 **Usage example:**
 ```python
@@ -624,7 +624,7 @@ loss = output.get("loss")   # Only if labels provided
 | create_training_args | `train.py` | ✅ Configurable TrainingArguments builder |
 | train() | `train.py` | ✅ Full training pipeline with artifact saving |
 | CLI interface | `train.py` | ✅ `python -m tweet_classifier.train --help` |
-| Unit tests | `tests/test_tweet_classifier.py` | ✅ 8 new tests (31 total) |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 8 tests for training |
 
 ### 4.1 Training Configuration
 
@@ -733,7 +733,57 @@ train(
 
 ## Phase 5: Evaluation
 
+✅ **Phase 5 Complete** - Evaluation module implemented in `src/tweet_classifier/evaluate.py`
+
+### Phase 5 Implementation Status
+
+| Component | File | Status |
+|-----------|------|--------|
+| evaluate_on_test() | `evaluate.py` | ✅ Run predictions on test set, return metrics |
+| generate_classification_report() | `evaluate.py` | ✅ Per-class precision/recall/F1 |
+| plot_confusion_matrix() | `evaluate.py` | ✅ Save confusion matrix as PNG |
+| compute_trading_metrics() | `evaluate.py` | ✅ IC, directional accuracy, Sharpe, precision@conf |
+| compute_baselines() | `evaluate.py` | ✅ Naive, random, weighted-random baselines |
+| run_full_evaluation() | `evaluate.py` | ✅ Orchestrate all evaluation steps |
+| CLI interface | `evaluate.py` | ✅ `python -m tweet_classifier.evaluate --help` |
+| --evaluate-test flag | `train.py` | ✅ Run test evaluation after training |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 13 new tests (44 total) |
+
+### 5.0 CLI Usage
+
+```bash
+# Train and evaluate on test set in one command
+source .venv/bin/activate
+python -m tweet_classifier.train --epochs 5 --evaluate-test
+
+# Or evaluate an existing trained model
+python -m tweet_classifier.evaluate \
+    --model-dir models/finbert-tweet-classifier/final \
+    --data-path output/15-dec-enrich7.csv \
+    --output-dir models/finbert-tweet-classifier/evaluation
+```
+
 ### 5.1 Test Set Evaluation
+
+```python
+from tweet_classifier import evaluate_on_test, run_full_evaluation
+
+# Simple evaluation
+results = evaluate_on_test(model, test_dataset)
+print(f"Test Accuracy: {results['accuracy']:.4f}")
+print(f"Test F1 (macro): {results['f1_macro']:.4f}")
+
+# Full evaluation with trading metrics, baselines, confusion matrix
+full_results = run_full_evaluation(
+    model=model,
+    test_dataset=test_dataset,
+    df_test=df_test,
+    df_train=df_train,
+    output_dir="models/finbert-tweet-classifier/evaluation"
+)
+```
+
+**Legacy approach (still works):**
 
 ```python
 from tweet_classifier.config import LABEL_MAP
@@ -765,6 +815,19 @@ print(classification_report(
 ### 5.2 Confusion Matrix
 
 ```python
+from tweet_classifier import plot_confusion_matrix
+
+# Using the new evaluation module
+fig = plot_confusion_matrix(
+    labels=results["labels"],
+    predictions=results["predictions"],
+    output_path="models/finbert-tweet-classifier/evaluation/confusion_matrix.png"
+)
+```
+
+**Legacy approach (still works):**
+
+```python
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -786,101 +849,43 @@ plt.savefig("models/confusion_matrix.png")
 
 **Why standard ML metrics aren't enough**: A 70% accurate model that's wrong on big moves **loses money**. These metrics evaluate actual trading utility.
 
+✅ **Implemented in `evaluate.py`**
+
 ```python
-from scipy.stats import spearmanr
-import numpy as np
+from tweet_classifier import compute_trading_metrics
 
-def compute_trading_metrics(predictions, confidences, actual_returns, transaction_cost=0.001):
-    """
-    Compute trading-relevant metrics beyond accuracy.
-    
-    Args:
-        predictions: Model predictions (0=SELL, 1=HOLD, 2=BUY)
-        confidences: Model confidence scores (softmax probabilities)
-        actual_returns: Actual 1-day returns
-        transaction_cost: Cost per trade as decimal (default 0.1% = 0.001)
-    
-    Returns:
-        Dictionary of trading metrics
-    """
-    results = {}
-    
-    # 1. Information Coefficient (IC)
-    # Correlation between model confidence and actual returns
-    # Good models: IC > 0.05
-    buy_confidence = confidences[:, 2] - confidences[:, 0]  # BUY - SELL confidence
-    ic, ic_pvalue = spearmanr(buy_confidence, actual_returns)
-    results["information_coefficient"] = ic
-    results["ic_pvalue"] = ic_pvalue
-    
-    # 2. Directional Accuracy (ignoring HOLD)
-    # How often does model correctly predict direction when it's confident?
-    non_hold_mask = predictions != 1
-    if non_hold_mask.sum() > 0:
-        predicted_direction = (predictions[non_hold_mask] == 2).astype(int) * 2 - 1  # +1 or -1
-        actual_direction = np.sign(actual_returns[non_hold_mask])
-        directional_acc = (predicted_direction == actual_direction).mean()
-        results["directional_accuracy"] = directional_acc
-    
-    # 3. Simulated Trading Sharpe (Top-30% confidence predictions)
-    # Only trade when model is most confident
-    top_30_pct = int(0.3 * len(predictions))
-    max_confidence = confidences.max(axis=1)
-    top_indices = np.argsort(max_confidence)[-top_30_pct:]
-    
-    # Simulate returns: long if BUY, short if SELL, flat if HOLD
-    simulated_returns = []
-    for idx in top_indices:
-        pred = predictions[idx]
-        ret = actual_returns[idx]
-        
-        if pred == 2:  # BUY
-            simulated_returns.append(ret - transaction_cost)
-        elif pred == 0:  # SELL
-            simulated_returns.append(-ret - transaction_cost)
-        else:  # HOLD
-            simulated_returns.append(0)
-    
-    simulated_returns = np.array(simulated_returns)
-    sharpe = (simulated_returns.mean() / simulated_returns.std()) * np.sqrt(252) if simulated_returns.std() > 0 else 0
-    results["simulated_sharpe_top30"] = sharpe
-    results["simulated_return_top30"] = simulated_returns.mean() * 252  # Annualized
-    
-    # 4. Precision @ High Confidence
-    # Accuracy only on predictions where confidence > 60%
-    high_conf_mask = max_confidence > 0.6
-    if high_conf_mask.sum() > 10:
-        label_map_inv = {0: "SELL", 1: "HOLD", 2: "BUY"}
-        actual_labels = df_test[TARGET_COLUMN].map({"SELL": 0, "HOLD": 1, "BUY": 2}).values
-        precision_high_conf = (predictions[high_conf_mask] == actual_labels[high_conf_mask]).mean()
-        results["precision_at_60pct_confidence"] = precision_high_conf
-        results["n_high_confidence_predictions"] = high_conf_mask.sum()
-    
-    return results
-
-# Usage:
-softmax_probs = torch.softmax(torch.tensor(results.predictions), dim=1).numpy()
-actual_returns = df_test["return_to_next_open"].values  # Use actual returns for this
-
+# Using the new evaluation module
 trading_metrics = compute_trading_metrics(
-    predictions=preds,
-    confidences=softmax_probs,
-    actual_returns=actual_returns
+    predictions=results["predictions"],
+    probabilities=results["probabilities"],
+    actual_returns=df_test["return_to_next_open"].values,
+    labels=results["labels"],
+    transaction_cost=0.001,      # 0.1% per trade
+    confidence_threshold=0.6,    # For precision@confidence
+    top_pct=0.3,                 # Top 30% for Sharpe calculation
 )
 
 print("\n=== Trading Metrics ===")
 print(f"Information Coefficient: {trading_metrics['information_coefficient']:.4f} (p={trading_metrics['ic_pvalue']:.4f})")
-print(f"Directional Accuracy (non-HOLD): {trading_metrics.get('directional_accuracy', 'N/A'):.2%}")
-print(f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top30']:.2f}")
-print(f"Annualized Return (top 30%): {trading_metrics['simulated_return_top30']:.2%}")
-print(f"Precision @ 60% confidence: {trading_metrics.get('precision_at_60pct_confidence', 'N/A')}")
-
-# Interpretation:
-# IC > 0.05: Model has predictive power
-# Directional Accuracy > 55%: Better than random
-# Simulated Sharpe > 1.0: Potentially tradable strategy
-# Precision @ 60% > 60%: High-confidence predictions are reliable
+print(f"Directional Accuracy (non-HOLD): {trading_metrics['directional_accuracy']:.2%}")
+print(f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top']:.2f}")
+print(f"Annualized Return (top 30%): {trading_metrics['simulated_return_top']:.2%}")
+if trading_metrics.get('precision_at_confidence'):
+    print(f"Precision @ 60% confidence: {trading_metrics['precision_at_confidence']:.2%}")
 ```
+
+**Metrics returned:**
+| Key | Description |
+|-----|-------------|
+| `information_coefficient` | Spearman correlation: model confidence vs actual returns |
+| `ic_pvalue` | P-value of IC |
+| `directional_accuracy` | % correct direction on non-HOLD predictions |
+| `n_directional_predictions` | Number of non-HOLD predictions with non-zero returns |
+| `simulated_sharpe_top` | Sharpe ratio on top-N% confidence trades |
+| `simulated_return_top` | Annualized return on top-N% confidence trades |
+| `n_top_trades` | Number of trades in top-N% |
+| `precision_at_confidence` | Accuracy when max confidence > threshold |
+| `n_high_confidence` | Number of high-confidence predictions |
 
 **What good results look like:**
 
@@ -895,44 +900,31 @@ print(f"Precision @ 60% confidence: {trading_metrics.get('precision_at_60pct_con
 
 **Critical**: Know what "good" means by comparing against naive baselines.
 
+✅ **Implemented in `evaluate.py`**
+
 ```python
-# ========== Baseline Comparisons ==========
-from tweet_classifier.config import LABEL_MAP
+from tweet_classifier import compute_baselines
 
-# Baseline 1: Naive (always predict majority class - SELL in this dataset)
-naive_predictions = np.full(len(df_test), 0)  # Always SELL (37.8% of data)
-naive_accuracy = (df_test[TARGET_COLUMN].map(LABEL_MAP).values == naive_predictions).mean()
-
-# Baseline 2: Random (uniform across 3 classes)
-random_accuracy = 1/3  # Expected accuracy
-random_f1 = 1/3  # Expected F1
-
-# Baseline 3: Class-weighted random (matches training distribution)
-class_probs = df_train[TARGET_COLUMN].value_counts(normalize=True)
-weighted_random_acc = (class_probs ** 2).sum()  # Probability of matching
+# Using the new evaluation module
+baselines = compute_baselines(
+    labels=results["labels"],
+    train_label_distribution=df_train[TARGET_COLUMN],  # Optional
+)
 
 print("\n=== Baseline Comparisons ===")
-print(f"Model Accuracy:        {results.metrics['test_accuracy']:.2%}")
-print(f"Naive (always SELL):   {naive_accuracy:.2%}")
-print(f"Random:                {random_accuracy:.2%}")
-print(f"Weighted Random:       {weighted_random_acc:.2%}")
-
-# Improvement metrics
-improvement_vs_naive = (results.metrics['test_accuracy'] - naive_accuracy) / naive_accuracy
-improvement_vs_random = (results.metrics['test_accuracy'] - random_accuracy) / random_accuracy
-
-print(f"\n=== Improvement ===")
-print(f"vs Naive:  {improvement_vs_naive:+.1%}")
-print(f"vs Random: {improvement_vs_random:+.1%}")
-
-# Is the model actually useful?
-if results.metrics['test_accuracy'] <= naive_accuracy:
-    print("⚠️  WARNING: Model performs WORSE than always predicting SELL!")
-elif improvement_vs_naive < 0.05:
-    print("⚠️  Model barely beats naive baseline (<5% improvement)")
-else:
-    print("✓ Model shows meaningful improvement over baselines")
+print(f"Model Accuracy:      {results['accuracy']:.2%}")
+print(f"Naive ({baselines['majority_class']}):  {baselines['naive_accuracy']:.2%}")
+print(f"Random:              {baselines['random_accuracy']:.2%}")
+print(f"Weighted Random:     {baselines['weighted_random_accuracy']:.2%}")
 ```
+
+**Baselines returned:**
+| Key | Description |
+|-----|-------------|
+| `naive_accuracy` | Accuracy if always predicting majority class |
+| `majority_class` | The majority class label (e.g., "SELL") |
+| `random_accuracy` | Expected accuracy from uniform random (1/3) |
+| `weighted_random_accuracy` | Expected accuracy from class-weighted random |
 
 **Interpretation:**
 - **Must beat naive baseline**: SELL is majority at 37.8%, so always predicting SELL = 37.8% accuracy
@@ -1037,22 +1029,26 @@ print(f"Signal: {signal}, Confidence: {confidence}")
 TimeWaste2/
 ├── src/
 │   └── tweet_enricher/              # Existing enrichment pipeline
-│   └── tweet_classifier/            # ✅ Training code (Phase 4 complete)
+│   └── tweet_classifier/            # ✅ Complete (Phase 5 done)
 │       ├── __init__.py              # ✅ Module exports
 │       ├── config.py                # ✅ Global configuration constants
 │       ├── dataset.py               # ✅ TweetDataset + scaler persistence
 │       ├── model.py                 # ✅ FinBERTMultiModal class
 │       ├── trainer.py               # ✅ WeightedTrainer + compute_metrics
-│       ├── train.py                 # ✅ Training script with CLI
+│       ├── train.py                 # ✅ Training script with CLI + --evaluate-test
+│       ├── evaluate.py              # ✅ Evaluation module (Phase 5)
 │       ├── data/
 │       │   ├── __init__.py          # ✅ Data submodule exports
 │       │   ├── loader.py            # ✅ Data loading + filtering
 │       │   ├── splitter.py          # ✅ Hash-based splitting
 │       │   └── weights.py           # ✅ Class weight computation
-│       └── predict.py               # TODO: Inference utilities
+│       └── predict.py               # TODO: Inference utilities (Phase 6)
 ├── models/
 │   └── finbert-tweet-classifier/    # Created during training
 │       ├── final/                   # Best model checkpoint
+│       ├── evaluation/              # ✅ Evaluation outputs (Phase 5)
+│       │   ├── confusion_matrix.png # Confusion matrix visualization
+│       │   └── evaluation_results.json  # All metrics in JSON
 │       ├── model_config.json        # Model architecture config
 │       ├── scaler.pkl               # Fitted StandardScaler
 │       └── encodings.pkl            # Author/category mappings
@@ -1063,7 +1059,7 @@ TimeWaste2/
 │   ├── phase0_validation.ipynb      # ✅ Pre-training validation
 │   └── phase2_feature_engineering.ipynb  # ✅ Feature engineering verification
 ├── tests/
-│   └── test_tweet_classifier.py     # ✅ Unit tests (31 tests)
+│   └── test_tweet_classifier.py     # ✅ Unit tests (44 tests)
 └── pyproject.toml                   # Dependencies included
 ```
 
@@ -1093,13 +1089,14 @@ scipy>=1.11.0
 3. ~~**Create** `src/tweet_classifier/` module~~ ✅ Done (Phase 2 feature engineering complete)
 4. ~~**Implement** `FinBERTMultiModal` model class~~ ✅ Done (Phase 3 complete)
 5. ~~**Implement training pipeline** with WeightedTrainer~~ ✅ Done (Phase 4 complete)
-6. **Run training** and evaluate on test set (Phase 5):
+6. ~~**Implement evaluation module** with trading metrics~~ ✅ Done (Phase 5 complete)
+7. **Run training and evaluation**:
    ```bash
    source .venv/bin/activate
-   python -m tweet_classifier.train --epochs 5 --batch-size 16
+   python -m tweet_classifier.train --epochs 5 --batch-size 16 --evaluate-test
    ```
-7. **Iterate** on hyperparameters based on F1 scores
-8. **Deploy** for real-time inference on new tweets (Phase 6)
+8. **Iterate** on hyperparameters based on F1 scores and trading metrics
+9. **Deploy** for real-time inference on new tweets (Phase 6)
 
 ---
 

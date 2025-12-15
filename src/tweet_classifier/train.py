@@ -7,14 +7,16 @@ This module provides:
 
 Usage:
     python -m tweet_classifier.train --data-path output/15-dec-enrich7.csv --epochs 5
+    python -m tweet_classifier.train --epochs 5 --evaluate-test  # Run test evaluation after training
 """
 
 import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
+import pandas as pd
 import torch
 from transformers import BertTokenizer, TrainingArguments
 
@@ -109,7 +111,8 @@ def train(
     learning_rate: float = DEFAULT_LEARNING_RATE,
     freeze_bert: bool = False,
     dropout: float = DEFAULT_DROPOUT,
-) -> None:
+    evaluate_test: bool = False,
+) -> Optional[Dict[str, Any]]:
     """Train the FinBERT multi-modal tweet classifier.
 
     Args:
@@ -120,6 +123,10 @@ def train(
         learning_rate: Initial learning rate.
         freeze_bert: If True, freeze BERT parameters (faster training).
         dropout: Dropout probability for regularization.
+        evaluate_test: If True, run full evaluation on test set after training.
+
+    Returns:
+        Dictionary with test evaluation results if evaluate_test=True, else None.
     """
     if data_path is None:
         data_path = DEFAULT_DATA_PATH
@@ -240,14 +247,43 @@ def train(
         json.dump(model_config, f, indent=2)
     logger.info(f"Saved model config to {config_path}")
 
-    # ========== Step 12: Final evaluation ==========
+    # ========== Step 12: Final evaluation on validation set ==========
     logger.info("Running final evaluation on validation set...")
     eval_results = trainer.evaluate()
-    logger.info("Evaluation results:")
+    logger.info("Validation results:")
     for key, value in eval_results.items():
         logger.info(f"  {key}: {value:.4f}")
 
+    # ========== Step 13: Optional test set evaluation ==========
+    test_results = None
+    if evaluate_test:
+        logger.info("\n" + "=" * 60)
+        logger.info("Running full evaluation on TEST set...")
+        logger.info("=" * 60)
+
+        # Import here to avoid circular imports
+        from tweet_classifier.evaluate import run_full_evaluation
+
+        # Create test dataset
+        test_dataset, _ = create_dataset_from_df(
+            df_test,
+            tokenizer,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            scaler=scaler,
+            fit_scaler=False,
+        )
+
+        test_results = run_full_evaluation(
+            model=model,
+            test_dataset=test_dataset,
+            df_test=df_test,
+            df_train=df_train,
+            output_dir=output_dir / "evaluation",
+        )
+
     logger.info("Training complete!")
+    return test_results
 
 
 def main() -> None:
@@ -298,6 +334,11 @@ def main() -> None:
         default=DEFAULT_DROPOUT,
         help="Dropout probability",
     )
+    parser.add_argument(
+        "--evaluate-test",
+        action="store_true",
+        help="Run full evaluation on test set after training (confusion matrix, trading metrics, baselines)",
+    )
 
     args = parser.parse_args()
 
@@ -309,6 +350,7 @@ def main() -> None:
         learning_rate=args.learning_rate,
         freeze_bert=args.freeze_bert,
         dropout=args.dropout,
+        evaluate_test=args.evaluate_test,
     )
 
 

@@ -8,6 +8,7 @@ This module provides utilities for:
 - Preprocessing artifact persistence (scaler, encodings)
 - FinBERTMultiModal model for classification
 - Training with class-weighted loss
+- Comprehensive evaluation with trading metrics
 """
 
 from tweet_classifier.config import (
@@ -28,6 +29,15 @@ from tweet_classifier.dataset import (
     save_categorical_encodings,
     save_preprocessing_artifacts,
     save_scaler,
+)
+from tweet_classifier.evaluate import (
+    compute_baselines,
+    compute_trading_metrics,
+    evaluate,
+    evaluate_on_test,
+    generate_classification_report,
+    plot_confusion_matrix,
+    run_full_evaluation,
 )
 from tweet_classifier.model import FinBERTMultiModal
 from tweet_classifier.train import create_training_args, train
@@ -52,6 +62,14 @@ __all__ = [
     "compute_metrics",
     "create_training_args",
     "train",
+    # Evaluation
+    "evaluate",
+    "evaluate_on_test",
+    "compute_trading_metrics",
+    "compute_baselines",
+    "generate_classification_report",
+    "plot_confusion_matrix",
+    "run_full_evaluation",
     # Persistence
     "save_scaler",
     "load_scaler",

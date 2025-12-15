@@ -714,3 +714,298 @@ class TestTrainingConfig:
                 assert args.fp16 is True
             else:
                 assert args.fp16 is False
+
+
+class TestComputeTradingMetrics:
+    """Tests for trading-focused evaluation metrics."""
+
+    def test_compute_trading_metrics_basic(self):
+        """Test compute_trading_metrics returns expected keys."""
+        from tweet_classifier.evaluate import compute_trading_metrics
+
+        np.random.seed(42)
+        n_samples = 100
+
+        predictions = np.random.randint(0, 3, n_samples)
+        probabilities = np.random.dirichlet([1, 1, 1], n_samples)
+        actual_returns = np.random.uniform(-0.05, 0.05, n_samples)
+        labels = np.random.randint(0, 3, n_samples)
+
+        metrics = compute_trading_metrics(
+            predictions=predictions,
+            probabilities=probabilities,
+            actual_returns=actual_returns,
+            labels=labels,
+        )
+
+        # Check required keys exist
+        assert "information_coefficient" in metrics
+        assert "ic_pvalue" in metrics
+        assert "directional_accuracy" in metrics
+        assert "simulated_sharpe_top" in metrics
+        assert "simulated_return_top" in metrics
+
+    def test_compute_trading_metrics_with_nan_returns(self):
+        """Test compute_trading_metrics handles NaN returns correctly."""
+        from tweet_classifier.evaluate import compute_trading_metrics
+
+        n_samples = 50
+        predictions = np.random.randint(0, 3, n_samples)
+        probabilities = np.random.dirichlet([1, 1, 1], n_samples)
+        actual_returns = np.random.uniform(-0.05, 0.05, n_samples)
+        labels = np.random.randint(0, 3, n_samples)
+
+        # Add some NaN values
+        actual_returns[10:20] = np.nan
+
+        metrics = compute_trading_metrics(
+            predictions=predictions,
+            probabilities=probabilities,
+            actual_returns=actual_returns,
+            labels=labels,
+        )
+
+        # Should still work with NaN values filtered out
+        assert "information_coefficient" in metrics
+        assert not np.isnan(metrics["information_coefficient"])
+
+    def test_compute_trading_metrics_directional_accuracy(self):
+        """Test directional accuracy with perfect predictions."""
+        from tweet_classifier.evaluate import compute_trading_metrics
+
+        # Create predictions where BUY (2) always aligns with positive returns
+        # and SELL (0) always aligns with negative returns
+        predictions = np.array([2, 2, 0, 0, 1])  # BUY, BUY, SELL, SELL, HOLD
+        probabilities = np.array([
+            [0.1, 0.1, 0.8],  # High BUY confidence
+            [0.1, 0.1, 0.8],  # High BUY confidence
+            [0.8, 0.1, 0.1],  # High SELL confidence
+            [0.8, 0.1, 0.1],  # High SELL confidence
+            [0.1, 0.8, 0.1],  # High HOLD confidence
+        ])
+        actual_returns = np.array([0.03, 0.02, -0.02, -0.03, 0.01])  # Positive for BUY, negative for SELL
+        labels = np.array([2, 2, 0, 0, 1])
+
+        metrics = compute_trading_metrics(
+            predictions=predictions,
+            probabilities=probabilities,
+            actual_returns=actual_returns,
+            labels=labels,
+        )
+
+        # Perfect directional accuracy for non-HOLD predictions
+        assert metrics["directional_accuracy"] == 1.0
+        assert metrics["n_directional_predictions"] == 4  # 4 non-HOLD predictions
+
+    def test_compute_trading_metrics_precision_at_confidence(self):
+        """Test precision at confidence threshold."""
+        from tweet_classifier.evaluate import compute_trading_metrics
+
+        np.random.seed(42)
+        n_samples = 100
+
+        # Create predictions with some high confidence ones being correct
+        predictions = np.random.randint(0, 3, n_samples)
+        labels = predictions.copy()  # All correct
+
+        # Create probabilities with varying confidence
+        probabilities = np.zeros((n_samples, 3))
+        for i in range(n_samples):
+            probabilities[i, predictions[i]] = 0.7  # 70% confidence
+            remaining = 0.3 / 2
+            for j in range(3):
+                if j != predictions[i]:
+                    probabilities[i, j] = remaining
+
+        actual_returns = np.random.uniform(-0.05, 0.05, n_samples)
+
+        metrics = compute_trading_metrics(
+            predictions=predictions,
+            probabilities=probabilities,
+            actual_returns=actual_returns,
+            labels=labels,
+            confidence_threshold=0.6,
+        )
+
+        # All predictions are correct and have >60% confidence
+        assert metrics["precision_at_confidence"] == 1.0
+        assert metrics["n_high_confidence"] == n_samples
+
+
+class TestComputeBaselines:
+    """Tests for baseline computation functions."""
+
+    def test_compute_baselines_returns_expected_keys(self):
+        """Test compute_baselines returns all expected keys."""
+        from tweet_classifier.evaluate import compute_baselines
+
+        labels = np.array([0, 0, 0, 1, 1, 2])  # Majority is class 0 (SELL)
+
+        baselines = compute_baselines(labels)
+
+        assert "naive_accuracy" in baselines
+        assert "random_accuracy" in baselines
+        assert "weighted_random_accuracy" in baselines
+        assert "majority_class" in baselines
+
+    def test_compute_baselines_naive_accuracy(self):
+        """Test naive accuracy equals majority class proportion."""
+        from tweet_classifier.evaluate import compute_baselines
+
+        # 60% class 0, 30% class 1, 10% class 2
+        labels = np.array([0] * 6 + [1] * 3 + [2] * 1)
+
+        baselines = compute_baselines(labels)
+
+        assert baselines["naive_accuracy"] == 0.6  # 6/10
+        assert baselines["majority_class"] == "SELL"  # Class 0
+
+    def test_compute_baselines_random_accuracy(self):
+        """Test random accuracy is 1/3 for 3 classes."""
+        from tweet_classifier.evaluate import compute_baselines
+
+        labels = np.array([0, 1, 2, 0, 1, 2])
+
+        baselines = compute_baselines(labels)
+
+        assert abs(baselines["random_accuracy"] - 1 / 3) < 1e-6
+
+    def test_compute_baselines_with_train_distribution(self):
+        """Test weighted random uses training distribution when provided."""
+        from tweet_classifier.evaluate import compute_baselines
+
+        test_labels = np.array([0, 1, 2] * 10)
+
+        # Training distribution: heavily skewed towards BUY
+        train_labels = pd.Series(["BUY"] * 80 + ["SELL"] * 15 + ["HOLD"] * 5)
+
+        baselines = compute_baselines(test_labels, train_label_distribution=train_labels)
+
+        # Weighted random should reflect training distribution
+        assert baselines["weighted_random_accuracy"] > baselines["random_accuracy"]
+
+
+class TestGenerateClassificationReport:
+    """Tests for classification report generation."""
+
+    def test_generate_classification_report_format(self):
+        """Test classification report returns string with class names."""
+        from tweet_classifier.evaluate import generate_classification_report
+
+        labels = np.array([0, 1, 2, 0, 1, 2])
+        predictions = np.array([0, 1, 2, 0, 0, 2])
+
+        report = generate_classification_report(labels, predictions)
+
+        assert isinstance(report, str)
+        assert "SELL" in report
+        assert "HOLD" in report
+        assert "BUY" in report
+        assert "precision" in report
+        assert "recall" in report
+
+
+class TestPlotConfusionMatrix:
+    """Tests for confusion matrix plotting."""
+
+    def test_plot_confusion_matrix_returns_figure(self):
+        """Test plot_confusion_matrix returns a matplotlib figure."""
+        import matplotlib.pyplot as plt
+
+        from tweet_classifier.evaluate import plot_confusion_matrix
+
+        labels = np.array([0, 1, 2, 0, 1, 2])
+        predictions = np.array([0, 1, 2, 0, 0, 2])
+
+        fig = plot_confusion_matrix(labels, predictions)
+
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_plot_confusion_matrix_saves_file(self):
+        """Test plot_confusion_matrix saves PNG file."""
+        import matplotlib.pyplot as plt
+
+        from tweet_classifier.evaluate import plot_confusion_matrix
+
+        labels = np.array([0, 1, 2, 0, 1, 2])
+        predictions = np.array([0, 1, 2, 0, 0, 2])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "cm.png"
+            fig = plot_confusion_matrix(labels, predictions, output_path=output_path)
+
+            assert output_path.exists()
+            assert output_path.stat().st_size > 0
+
+            plt.close(fig)
+
+
+class TestEvaluateOnTest:
+    """Tests for the evaluate_on_test function."""
+
+    @pytest.fixture
+    def mock_model(self):
+        """Create a mock model for testing."""
+        import torch
+        import torch.nn as nn
+
+        class MockModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(10, 3)
+
+            def forward(self, **kwargs):
+                batch_size = kwargs.get("input_ids", torch.zeros(4, 10)).shape[0]
+                # Return slightly random logits so we get different predictions
+                logits = torch.randn(batch_size, 3)
+                return {"logits": logits}
+
+        return MockModel()
+
+    @pytest.fixture
+    def mock_dataset(self, sample_df: pd.DataFrame):
+        """Create a mock dataset for testing."""
+        sample_df = filter_reliable(sample_df)
+        encodings = create_categorical_encodings(sample_df)
+        encoded_df = encode_categorical(
+            sample_df, encodings["author_to_idx"], encodings["category_to_idx"]
+        )
+
+        scaler = StandardScaler()
+        numerical = scaler.fit_transform(encoded_df[NUMERICAL_FEATURES].fillna(0))
+
+        dataset = TweetDataset(
+            texts=encoded_df["text"],
+            numerical_features=numerical,
+            author_indices=encoded_df["author_idx"],
+            category_indices=encoded_df["category_idx"],
+            labels=encoded_df[TARGET_COLUMN],
+            tokenizer=MockTokenizer(),
+            max_length=128,
+        )
+        return dataset
+
+    def test_evaluate_on_test_returns_expected_keys(self, mock_model, mock_dataset):
+        """Test evaluate_on_test returns dictionary with expected keys."""
+        from tweet_classifier.evaluate import evaluate_on_test
+
+        results = evaluate_on_test(mock_model, mock_dataset, batch_size=16)
+
+        assert "predictions" in results
+        assert "probabilities" in results
+        assert "labels" in results
+        assert "accuracy" in results
+        assert "f1_macro" in results
+        assert "f1_weighted" in results
+
+    def test_evaluate_on_test_output_shapes(self, mock_model, mock_dataset):
+        """Test evaluate_on_test returns arrays with correct shapes."""
+        from tweet_classifier.evaluate import evaluate_on_test
+
+        results = evaluate_on_test(mock_model, mock_dataset, batch_size=16)
+
+        n_samples = len(mock_dataset)
+        assert results["predictions"].shape == (n_samples,)
+        assert results["probabilities"].shape == (n_samples, 3)
+        assert results["labels"].shape == (n_samples,)
