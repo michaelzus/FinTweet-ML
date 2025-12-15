@@ -433,6 +433,55 @@ df_train["category_idx"] = df_train["category"].map(category_to_idx)
 - Embedding allows model to learn author-specific adjustments
 - Note: Authors have different label distributions (e.g., Evan has more HOLD tweets)
 
+### Phase 2 Implementation Status
+
+✅ **Phase 2 Complete** - See `notebooks/phase2_feature_engineering.ipynb` for verification.
+
+| Component | File | Status |
+|-----------|------|--------|
+| Global config | `config.py` | ✅ `NUMERICAL_FEATURES`, `EXCLUDED_FROM_FEATURES`, embedding dims |
+| Data loading | `data/loader.py` | ✅ `load_enriched_data()`, `filter_reliable()`, `prepare_features()` |
+| Data splitting | `data/splitter.py` | ✅ `split_by_hash()`, `verify_no_leakage()` |
+| Class weights | `data/weights.py` | ✅ `compute_class_weights()`, `weights_to_tensor()` |
+| TweetDataset | `dataset.py` | ✅ Multi-modal dataset with tokenization |
+| Categorical encoding | `dataset.py` | ✅ `create_categorical_encodings()`, `encode_categorical()` |
+| Scaler persistence | `dataset.py` | ✅ `save_scaler()`, `load_scaler()`, `save_preprocessing_artifacts()` |
+| Unit tests | `tests/test_tweet_classifier.py` | ✅ 16 tests passing |
+
+**Usage example:**
+```python
+from tweet_classifier import (
+    load_enriched_data, filter_reliable, split_by_hash,
+    create_categorical_encodings, create_dataset_from_df,
+    compute_class_weights, save_preprocessing_artifacts
+)
+from transformers import BertTokenizer
+
+# Load and filter data
+df = load_enriched_data()
+df_reliable = filter_reliable(df)
+df_train, df_val, df_test = split_by_hash(df_reliable)
+
+# Create encodings from training data
+encodings = create_categorical_encodings(df_train)
+tokenizer = BertTokenizer.from_pretrained("yiyanghkust/finbert-tone")
+
+# Create datasets (scaler is fitted on train, reused for val/test)
+train_dataset, scaler = create_dataset_from_df(
+    df_train, tokenizer, 
+    encodings['author_to_idx'], encodings['category_to_idx'],
+    fit_scaler=True
+)
+val_dataset, _ = create_dataset_from_df(
+    df_val, tokenizer,
+    encodings['author_to_idx'], encodings['category_to_idx'],
+    scaler=scaler, fit_scaler=False
+)
+
+# Save artifacts for inference
+save_preprocessing_artifacts(scaler, encodings, "models/finbert-tweet-classifier")
+```
+
 ---
 
 ## Phase 3: Model Architecture
@@ -838,7 +887,7 @@ weighted_random_acc = (class_probs ** 2).sum()  # Probability of matching
 
 print("\n=== Baseline Comparisons ===")
 print(f"Model Accuracy:        {results.metrics['test_accuracy']:.2%}")
-print(f"Naive (always HOLD):   {naive_accuracy:.2%}")
+print(f"Naive (always SELL):   {naive_accuracy:.2%}")
 print(f"Random:                {random_accuracy:.2%}")
 print(f"Weighted Random:       {weighted_random_acc:.2%}")
 
@@ -852,7 +901,7 @@ print(f"vs Random: {improvement_vs_random:+.1%}")
 
 # Is the model actually useful?
 if results.metrics['test_accuracy'] <= naive_accuracy:
-    print("⚠️  WARNING: Model performs WORSE than always predicting HOLD!")
+    print("⚠️  WARNING: Model performs WORSE than always predicting SELL!")
 elif improvement_vs_naive < 0.05:
     print("⚠️  Model barely beats naive baseline (<5% improvement)")
 else:
@@ -961,24 +1010,34 @@ print(f"Signal: {signal}, Confidence: {confidence}")
 ```
 TimeWaste2/
 ├── src/
-│   └── tweet_enricher/         # Existing enrichment pipeline
-│   └── tweet_classifier/       # NEW: Training code
-│       ├── __init__.py
-│       ├── dataset.py          # TweetDataset class
-│       ├── model.py            # FinBERTMultiModal class
-│       ├── train.py            # Training script
-│       └── predict.py          # Inference utilities
+│   └── tweet_enricher/              # Existing enrichment pipeline
+│   └── tweet_classifier/            # ✅ Training code (Phase 2 complete)
+│       ├── __init__.py              # ✅ Module exports
+│       ├── config.py                # ✅ Global configuration constants
+│       ├── dataset.py               # ✅ TweetDataset + scaler persistence
+│       ├── data/
+│       │   ├── __init__.py          # ✅ Data submodule exports
+│       │   ├── loader.py            # ✅ Data loading + filtering
+│       │   ├── splitter.py          # ✅ Hash-based splitting
+│       │   └── weights.py           # ✅ Class weight computation
+│       ├── model.py                 # TODO: FinBERTMultiModal class
+│       ├── train.py                 # TODO: Training script
+│       └── predict.py               # TODO: Inference utilities
 ├── models/
-│   └── finbert-tweet-classifier/
+│   └── finbert-tweet-classifier/    # Created during training
 │       ├── config.json
 │       ├── pytorch_model.bin
-│       └── scaler.pkl
+│       ├── scaler.pkl
+│       └── encodings.pkl
 ├── output/
-│   ├── 15-dec2.csv             # Clean parsed tweets
-│   └── 15-dec-enrich7.csv      # Enriched with indicators (5,866 rows)
+│   ├── 15-dec2.csv                  # Clean parsed tweets
+│   └── 15-dec-enrich7.csv           # Enriched with indicators (5,866 rows)
 ├── notebooks/
-│   └── phase0_validation.ipynb # Pre-training validation
-└── requirements.txt            # Add: transformers, torch, sklearn
+│   ├── phase0_validation.ipynb      # ✅ Pre-training validation
+│   └── phase2_feature_engineering.ipynb  # ✅ Feature engineering verification
+├── tests/
+│   └── test_tweet_classifier.py     # ✅ Unit tests (16 tests)
+└── pyproject.toml                   # Dependencies included
 ```
 
 ---
@@ -1002,10 +1061,11 @@ joblib>=1.3.0
 
 1. ~~**Run enrichment** on `15-dec2.csv` to generate enriched data~~ ✅ Done (`15-dec-enrich7.csv`)
 2. ~~**Run Phase 0 validation** to confirm data integrity~~ ✅ Done (see `notebooks/phase0_validation.ipynb`)
-3. **Create** `src/tweet_classifier/` module with the code above
-4. **Train** the model and evaluate on test set
-5. **Iterate** on hyperparameters based on F1 scores
-6. **Deploy** for real-time inference on new tweets
+3. ~~**Create** `src/tweet_classifier/` module~~ ✅ Done (Phase 2 feature engineering complete)
+4. **Implement** `FinBERTMultiModal` model class (Phase 3)
+5. **Train** the model and evaluate on test set (Phase 4-5)
+6. **Iterate** on hyperparameters based on F1 scores
+7. **Deploy** for real-time inference on new tweets (Phase 6)
 
 ---
 
