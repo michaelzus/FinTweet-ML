@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 from sklearn.preprocessing import StandardScaler
 
 from tweet_classifier.config import (
@@ -141,20 +142,20 @@ class MockTokenizer:
     """Mock tokenizer for testing TweetDataset without loading real model."""
 
     def __call__(self, texts, **kwargs):
-        """Tokenize texts returning numpy arrays of zeros/ones.
+        """Tokenize texts returning PyTorch tensors of zeros/ones.
 
         Args:
             texts: List of text strings to tokenize.
-            **kwargs: Additional keyword arguments (max_length supported).
+            **kwargs: Additional keyword arguments (max_length, return_tensors supported).
 
         Returns:
-            Dict with input_ids and attention_mask numpy arrays.
+            Dict with input_ids and attention_mask as PyTorch tensors.
         """
         n = len(texts)
         max_len = kwargs.get("max_length", 128)
         return {
-            "input_ids": np.zeros((n, max_len), dtype=np.int64),
-            "attention_mask": np.ones((n, max_len), dtype=np.int64),
+            "input_ids": torch.zeros((n, max_len), dtype=torch.long),
+            "attention_mask": torch.ones((n, max_len), dtype=torch.long),
         }
 
 
