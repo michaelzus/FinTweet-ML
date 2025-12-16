@@ -64,3 +64,9 @@ data/intraday/
 *.log
 .env
 .env.local
+
+# Models (large binary files - training outputs)
+models/
+*.safetensors
+*.pkl
+*.pt

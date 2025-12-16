@@ -138,3 +138,15 @@ TimeWaste2/
     ├── tweets.csv          # Parsed Discord (Step 3)
     └── enriched_output.csv # With financial data (Step 4)
 ```
+
+
+
+# Train and evaluate on test set
+source .venv/bin/activate
+python -m tweet_classifier.train --epochs 5 --evaluate-test
+
+# Or evaluate an existing model
+python -m tweet_classifier.evaluate \
+    --model-dir models/finbert-tweet-classifier/final \
+    --data-path output/15-dec-enrich7.csv \
+    --output-dir models/finbert-tweet-classifier/evaluation

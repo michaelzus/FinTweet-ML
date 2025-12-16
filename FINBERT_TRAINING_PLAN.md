@@ -1090,13 +1090,26 @@ scipy>=1.11.0
 4. ~~**Implement** `FinBERTMultiModal` model class~~ ✅ Done (Phase 3 complete)
 5. ~~**Implement training pipeline** with WeightedTrainer~~ ✅ Done (Phase 4 complete)
 6. ~~**Implement evaluation module** with trading metrics~~ ✅ Done (Phase 5 complete)
-7. **Run training and evaluation**:
-   ```bash
-   source .venv/bin/activate
-   python -m tweet_classifier.train --epochs 5 --batch-size 16 --evaluate-test
-   ```
+7. ~~**Run training and evaluation**~~ ✅ Done (see `TRAINING_RESULTS.md`)
 8. **Iterate** on hyperparameters based on F1 scores and trading metrics
 9. **Deploy** for real-time inference on new tweets (Phase 6)
+
+---
+
+## Training Results Summary
+
+See **`TRAINING_RESULTS.md`** for detailed results.
+
+### Best Model: Frozen BERT (Option A)
+
+| Metric | Result | vs Naive |
+|--------|--------|----------|
+| Accuracy | 43.0% | +1.1% ✅ |
+| F1 Macro | 42.4% | - |
+| Directional Accuracy | 54.5% | - |
+| IC | 0.096 (p=0.015) | Significant |
+
+**Recommendation**: Use `--freeze-bert` for training on this dataset size (~3200 samples).
 
 ---
 
