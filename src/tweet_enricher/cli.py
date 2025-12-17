@@ -362,6 +362,26 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
         accounts = [args.account] if args.account else None
         sync_service = SyncService(accounts=accounts)
 
+        # Handle estimate mode
+        months = getattr(args, 'months', None)
+        if getattr(args, 'estimate', False):
+            estimate = sync_service.estimate_backfill(months_back=months or 6)
+            print("\n" + "=" * 60)
+            print("BACKFILL ESTIMATE")
+            print("=" * 60)
+            print(f"  Accounts:           {estimate['accounts']}")
+            print(f"  Months back:        {estimate['months']}")
+            print(f"  Estimated tweets:   ~{estimate['estimated_tweets']:,}")
+            print(f"  Estimated API calls: ~{estimate['estimated_api_calls']:,}")
+            print(f"  Estimated time:     ~{estimate['estimated_time_hours']:.1f} hours")
+            print(f"  Rate limit delay:   {estimate['rate_limit_delay']}s per request")
+            print("=" * 60)
+            print("\nTo run the backfill:")
+            print(f"  tweet-enricher twitter sync --months {estimate['months']}")
+            print("\nFor long backfills, run in background:")
+            print(f"  nohup tweet-enricher twitter sync --months {estimate['months']} -v > backfill.log 2>&1 &")
+            return 0
+
         # Test connection first
         logger.info("Testing Twitter API connection...")
         if not sync_service.client.test_connection():
@@ -370,20 +390,36 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
             return 1
         logger.info("Connection successful!")
 
+        # Check for resume mode
+        resume = getattr(args, 'resume', False)
+        show_progress = months is not None  # Show progress for historical backfill
+
         # Perform sync
         if args.account:
             logger.info(f"Syncing account: @{args.account}")
+            if months:
+                logger.info(f"Historical backfill: {months} months")
             result = sync_service.sync_account(
                 account=args.account,
                 full_sync=args.full,
                 max_tweets=args.max_tweets,
+                months_back=months,
+                show_progress=show_progress,
+                resume=resume,
+                use_date_search=getattr(args, 'date_search', False),
             )
             results = [result]
         else:
             logger.info(f"Syncing all {len(TWITTER_ACCOUNTS)} configured accounts")
+            if months:
+                logger.info(f"Historical backfill: {months} months")
             results = sync_service.sync_all(
                 full_sync=args.full,
                 max_tweets_per_account=args.max_tweets,
+                months_back=months,
+                show_progress=show_progress,
+                resume=resume,
+                use_date_search=getattr(args, 'date_search', False),
             )
 
         # Print summary
@@ -448,14 +484,15 @@ def cmd_twitter_status(args: argparse.Namespace) -> int:
 
         # Account status
         print("\nAccount Status:")
-        print("-" * 60)
-        print(f"  {'Account':<20} {'Last Sync':<20} {'Tweets':>10}")
-        print("-" * 60)
+        print("-" * 70)
+        print(f"  {'Account':<20} {'Raw Tweets':>12} {'Days':>8} {'Last Sync':<20}")
+        print("-" * 70)
 
         for acc in status["accounts"]:
             last_sync = acc["last_sync"][:19] if acc["last_sync"] else "Never"
-            tweets = acc["total_tweets"]
-            print(f"  @{acc['account']:<19} {last_sync:<20} {tweets:>10,}")
+            raw_tweets = acc["raw_tweets"]
+            days = acc["days_fetched"]
+            print(f"  @{acc['account']:<19} {raw_tweets:>12,} {days:>8} {last_sync:<20}")
 
         print("=" * 60)
 
@@ -631,15 +668,22 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  tweet-enricher twitter sync                    # Sync all accounts
+  tweet-enricher twitter sync                    # Sync all accounts (incremental)
   tweet-enricher twitter sync --account StockMKTNewz  # Sync specific account
+  tweet-enricher twitter sync --months 6         # Historical backfill (6 months)
+  tweet-enricher twitter sync --months 6 --estimate  # Estimate time/cost only
+  tweet-enricher twitter sync --resume           # Resume interrupted backfill
   tweet-enricher twitter sync --full             # Full re-sync (ignore cursor)
   tweet-enricher twitter sync --max-tweets 100   # Limit tweets per account
         """,
     )
     twitter_sync_parser.add_argument("--account", help="Specific account to sync (default: all)")
+    twitter_sync_parser.add_argument("--months", type=int, help="Historical backfill: fetch N months of tweets")
+    twitter_sync_parser.add_argument("--estimate", action="store_true", help="Show time/cost estimate without fetching")
+    twitter_sync_parser.add_argument("--resume", action="store_true", help="Resume interrupted backfill from last cursor")
     twitter_sync_parser.add_argument("--full", action="store_true", help="Full re-sync, ignore previous cursor")
     twitter_sync_parser.add_argument("--max-tweets", type=int, help="Max tweets to fetch per account")
+    twitter_sync_parser.add_argument("--date-search", action="store_true", help="Use date-based search (better for 6+ month history)")
     twitter_sync_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     twitter_sync_parser.set_defaults(func=cmd_twitter_sync)
 

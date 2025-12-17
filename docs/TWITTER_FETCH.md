@@ -73,11 +73,20 @@ export TWITTER_API_KEY="your_api_key_here"
 ### Sync Tweets
 
 ```bash
-# Sync all configured accounts
+# Sync all configured accounts (incremental - only new tweets)
 tweet-enricher twitter sync
 
 # Sync specific account
 tweet-enricher twitter sync --account StockMKTNewz
+
+# Historical backfill: fetch 6 months of tweets
+tweet-enricher twitter sync --months 6
+
+# Estimate time/cost before running backfill
+tweet-enricher twitter sync --months 6 --estimate
+
+# Resume an interrupted backfill
+tweet-enricher twitter sync --resume
 
 # Full re-sync (ignore existing data, fetch everything)
 tweet-enricher twitter sync --full
@@ -148,6 +157,9 @@ Tracks sync progress per account.
 | last_cursor | TEXT | API pagination cursor |
 | last_sync_at | TEXT | ISO timestamp of last sync |
 | total_tweets | INTEGER | Running count of processed tweets |
+| backfill_cursor | TEXT | Cursor for resuming backfill |
+| backfill_target_date | TEXT | Target date for historical fetch |
+| backfill_complete | INTEGER | 1 if backfill is complete |
 
 ### tweets_raw
 Stores complete API responses for debugging and future feature extraction.
@@ -210,6 +222,77 @@ Incremental sync (last tweet: 2001324330014376353)
 First tweet 2001324330014376353 already exists - no new data
 Sync complete for @StockMKTNewz: 0 raw, 0 processed (1 API calls)
 ```
+
+## Historical Backfill
+
+For ML training, you typically need 4-6 months of historical data. The system supports fetching historical tweets with progress tracking and resume capability.
+
+### Estimate Before Fetching
+
+Always estimate first to understand time and cost:
+
+```bash
+$ tweet-enricher twitter sync --months 6 --estimate
+
+============================================================
+BACKFILL ESTIMATE
+============================================================
+  Accounts:           6
+  Months back:        6
+  Estimated tweets:   ~32,400
+  Estimated API calls: ~1,620
+  Estimated time:     ~2.3 hours
+  Rate limit delay:   5.0s per request
+============================================================
+```
+
+### Running a Backfill
+
+For long backfills (~2 hours), run in background:
+
+```bash
+# Run in background with logging
+nohup tweet-enricher twitter sync --months 6 -v > backfill.log 2>&1 &
+
+# Monitor progress
+tail -f backfill.log
+```
+
+Or run a test backfill first:
+
+```bash
+# Test with 1 month, single account (~20 min)
+tweet-enricher twitter sync --months 1 --account StockMKTNewz -v
+```
+
+### Resume Interrupted Backfill
+
+If a backfill is interrupted (network error, etc.), resume from where you left off:
+
+```bash
+tweet-enricher twitter sync --resume
+```
+
+The system stores the pagination cursor in `sync_state.backfill_cursor` so it can continue fetching from the exact point of interruption.
+
+### Progress Tracking
+
+During historical backfill, real-time progress is displayed:
+
+```
+[1/6] Fetching @StockMKTNewz...
+  Progress: 1,234 tweets | 62 API calls | Currently at: 2025-09-23
+```
+
+### Database Schema for Backfill
+
+Additional columns in `sync_state` for backfill support:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| backfill_cursor | TEXT | Pagination cursor for resume |
+| backfill_target_date | TEXT | Target date (ISO format) |
+| backfill_complete | INTEGER | 1 if backfill finished |
 
 ## API Details
 
@@ -321,9 +404,7 @@ src/tweet_enricher/twitter/
 
 2. **Cashtag Search**: Add endpoint for searching by `$TICKER` directly (broader coverage, more noise)
 
-3. **Historical Backfill**: Support fetching 6+ months of history for ML training
-
-4. **Webhook Support**: Real-time updates instead of polling
+3. **Webhook Support**: Real-time updates instead of polling
 
 ### Data Already Captured
 

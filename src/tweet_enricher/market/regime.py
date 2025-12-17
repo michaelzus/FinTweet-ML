@@ -85,7 +85,9 @@ class MarketRegimeClassifier:
         Returns:
             Historical volatility or None if not enough data
         """
-        if current_idx < window:
+        # Need at least window data points: indices [current_idx - window + 1, current_idx]
+        # This requires current_idx - window + 1 >= 0, i.e., current_idx >= window - 1
+        if current_idx < window - 1:
             return None
 
         closes = df.iloc[current_idx - window + 1 : current_idx + 1]["close"].values

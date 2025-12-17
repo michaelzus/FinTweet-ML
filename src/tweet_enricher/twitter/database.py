@@ -24,6 +24,10 @@ class SyncState:
     last_cursor: Optional[str]
     last_sync_at: Optional[datetime]
     total_tweets: int
+    # Backfill state
+    backfill_cursor: Optional[str] = None
+    backfill_target_date: Optional[str] = None
+    backfill_complete: bool = False
 
 
 @dataclass
@@ -50,7 +54,10 @@ class TweetDatabase:
         last_tweet_id TEXT,
         last_cursor TEXT,
         last_sync_at TEXT,
-        total_tweets INTEGER DEFAULT 0
+        total_tweets INTEGER DEFAULT 0,
+        backfill_cursor TEXT,
+        backfill_target_date TEXT,
+        backfill_complete INTEGER DEFAULT 0
     );
 
     -- Raw API responses (for debugging/replay)
@@ -78,6 +85,17 @@ class TweetDatabase:
     CREATE INDEX IF NOT EXISTS idx_tweets_timestamp ON tweets_processed(timestamp_et);
     CREATE INDEX IF NOT EXISTS idx_tweets_author ON tweets_processed(author);
     CREATE INDEX IF NOT EXISTS idx_tweets_ticker ON tweets_processed(ticker);
+
+    -- Fetch journal: tracks which (account, date) pairs have been fetched
+    CREATE TABLE IF NOT EXISTS fetch_journal (
+        account TEXT NOT NULL,
+        fetch_date TEXT NOT NULL,      -- YYYY-MM-DD
+        fetched_at TEXT NOT NULL,      -- ISO timestamp when fetched
+        tweets_count INTEGER DEFAULT 0,
+        api_calls INTEGER DEFAULT 0,
+        PRIMARY KEY (account, fetch_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_journal_account ON fetch_journal(account);
     """
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -106,7 +124,27 @@ class TweetDatabase:
         with self._get_connection() as conn:
             conn.executescript(self.SCHEMA)
             conn.commit()
+        
+        # Run migrations for existing databases
+        self._migrate_schema()
         logger.debug(f"Database initialized at {self.db_path}")
+
+    def _migrate_schema(self) -> None:
+        """Add new columns to existing databases."""
+        with self._get_connection() as conn:
+            # Check if backfill columns exist
+            cursor = conn.execute("PRAGMA table_info(sync_state)")
+            columns = {row["name"] for row in cursor.fetchall()}
+            
+            # Add backfill columns if missing
+            if "backfill_cursor" not in columns:
+                conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_cursor TEXT")
+            if "backfill_target_date" not in columns:
+                conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_target_date TEXT")
+            if "backfill_complete" not in columns:
+                conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_complete INTEGER DEFAULT 0")
+            
+            conn.commit()
 
     # =========================================================================
     # Sync State Operations
@@ -138,6 +176,9 @@ class TweetDatabase:
                     last_cursor=row["last_cursor"],
                     last_sync_at=last_sync_at,
                     total_tweets=row["total_tweets"] or 0,
+                    backfill_cursor=row["backfill_cursor"] if "backfill_cursor" in row.keys() else None,
+                    backfill_target_date=row["backfill_target_date"] if "backfill_target_date" in row.keys() else None,
+                    backfill_complete=bool(row["backfill_complete"]) if "backfill_complete" in row.keys() else False,
                 )
             return None
 
@@ -196,9 +237,42 @@ class TweetDatabase:
                         last_cursor=row["last_cursor"],
                         last_sync_at=last_sync_at,
                         total_tweets=row["total_tweets"] or 0,
+                        backfill_cursor=row["backfill_cursor"] if "backfill_cursor" in row.keys() else None,
+                        backfill_target_date=row["backfill_target_date"] if "backfill_target_date" in row.keys() else None,
+                        backfill_complete=bool(row["backfill_complete"]) if "backfill_complete" in row.keys() else False,
                     )
                 )
             return states
+
+    def update_backfill_state(
+        self,
+        account: str,
+        cursor: Optional[str] = None,
+        target_date: Optional[str] = None,
+        complete: bool = False,
+    ) -> None:
+        """
+        Update backfill state for an account.
+
+        Args:
+            account: Twitter username
+            cursor: Pagination cursor for resuming
+            target_date: Target date for backfill (ISO format)
+            complete: Whether backfill is complete
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_state (account, backfill_cursor, backfill_target_date, backfill_complete)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(account) DO UPDATE SET
+                    backfill_cursor = excluded.backfill_cursor,
+                    backfill_target_date = COALESCE(excluded.backfill_target_date, backfill_target_date),
+                    backfill_complete = excluded.backfill_complete
+                """,
+                (account, cursor, target_date, 1 if complete else 0),
+            )
+            conn.commit()
 
     # =========================================================================
     # Raw Tweet Operations
@@ -390,6 +464,22 @@ class TweetDatabase:
             ).fetchall()
             return [row["ticker"] for row in rows]
 
+    def get_raw_tweet_counts_by_account(self) -> dict[str, int]:
+        """Get raw tweet counts per account from the database."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT account, COUNT(*) as cnt FROM tweets_raw GROUP BY account"
+            ).fetchall()
+            return {row["account"]: row["cnt"] for row in rows}
+
+    def get_journal_days_by_account(self) -> dict[str, int]:
+        """Get number of days fetched per account from the journal."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT account, COUNT(*) as cnt FROM fetch_journal GROUP BY account"
+            ).fetchall()
+            return {row["account"]: row["cnt"] for row in rows}
+
     def get_stats(self) -> dict:
         """Get database statistics."""
         with self._get_connection() as conn:
@@ -413,4 +503,79 @@ class TweetDatabase:
                     "max": date_range["max_date"],
                 } if date_range["min_date"] else None,
             }
+
+    # =========================================================================
+    # Fetch Journal Operations
+    # =========================================================================
+
+    def is_day_fetched(self, account: str, date: str) -> bool:
+        """
+        Check if a specific day has already been fetched for an account.
+
+        Args:
+            account: Twitter username
+            date: Date string in YYYY-MM-DD format
+
+        Returns:
+            True if day was already fetched, False otherwise
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM fetch_journal WHERE account = ? AND fetch_date = ?",
+                (account, date),
+            ).fetchone()
+            return row is not None
+
+    def mark_day_fetched(
+        self,
+        account: str,
+        date: str,
+        tweets_count: int = 0,
+        api_calls: int = 0,
+    ) -> None:
+        """
+        Mark a day as successfully fetched for an account.
+
+        Args:
+            account: Twitter username
+            date: Date string in YYYY-MM-DD format
+            tweets_count: Number of tweets fetched for this day
+            api_calls: Number of API calls made for this day
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO fetch_journal (account, fetch_date, fetched_at, tweets_count, api_calls)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(account, fetch_date) DO UPDATE SET
+                    fetched_at = excluded.fetched_at,
+                    tweets_count = excluded.tweets_count,
+                    api_calls = excluded.api_calls
+                """,
+                (
+                    account,
+                    date,
+                    datetime.now(pytz.UTC).isoformat(),
+                    tweets_count,
+                    api_calls,
+                ),
+            )
+            conn.commit()
+
+    def get_fetched_days(self, account: str) -> list[str]:
+        """
+        Get all dates that have been fetched for an account.
+
+        Args:
+            account: Twitter username
+
+        Returns:
+            List of date strings (YYYY-MM-DD format)
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT fetch_date FROM fetch_journal WHERE account = ? ORDER BY fetch_date",
+                (account,),
+            ).fetchall()
+            return [row["fetch_date"] for row in rows]
 

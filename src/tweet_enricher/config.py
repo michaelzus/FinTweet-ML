@@ -70,7 +70,8 @@ METADATA_CACHE_FILE = Path("data/stock_metadata.json")
 # TwitterAPI.io settings
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_DB_PATH = Path("data/tweets.db")
-TWITTER_RATE_LIMIT_DELAY = 5.0  # seconds between requests (free tier limit)
+TWITTER_RATE_LIMIT_DELAY = 0.2  # seconds between requests (paid tier - very fast!)
+TWITTER_TWEETS_PER_REQUEST = 100  # max tweets per API call (paid tier supports more)
 TWITTER_ACCOUNTS = [
     "StockMKTNewz",
     "wallstengine",
