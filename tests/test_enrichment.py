@@ -102,16 +102,16 @@ async def main():
         print()
 
         print("PRICE DATA:")
-        if result["price_at_tweet"]:
-            print(f"  Price at Tweet:          ${result['price_at_tweet']:.2f}")
+        if result["entry_price"]:
+            print(f"  Entry Price:             ${result['entry_price']:.2f}")
         else:
-            print("  Price at Tweet:          N/A")
-        print(f"  Price Flag:              {result['price_at_tweet_flag']}")
-        if result["price_1hr_after"]:
-            print(f"  Price 1hr After:         ${result['price_1hr_after']:.2f}")
+            print("  Entry Price:             N/A")
+        print(f"  Entry Price Flag:        {result['entry_price_flag']}")
+        if result["exit_price_1hr"]:
+            print(f"  Exit Price 1hr:          ${result['exit_price_1hr']:.2f}")
         else:
-            print("  Price 1hr After:         N/A")
-        print(f"  Price 1hr Flag:          {result['price_1hr_after_flag']}")
+            print("  Exit Price 1hr:          N/A")
+        print(f"  Exit Price 1hr Flag:     {result['exit_price_1hr_flag']}")
         print()
 
         print("TECHNICAL INDICATORS:")

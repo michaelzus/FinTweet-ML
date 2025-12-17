@@ -284,7 +284,7 @@ async def _enrich_data(args: argparse.Namespace) -> int:
         logger.info("=" * 80)
         logger.info("SUMMARY")
         logger.info("=" * 80)
-        successful = sum(1 for _, r in output_df.iterrows() if r["price_at_tweet"] is not None)
+        successful = sum(1 for _, r in output_df.iterrows() if r["entry_price"] is not None)
         logger.info(f"Total processed: {len(output_df)}")
         logger.info(f"Successful: {successful}")
         logger.info(f"Failed: {len(output_df) - successful}")

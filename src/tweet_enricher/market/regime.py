@@ -88,7 +88,7 @@ class MarketRegimeClassifier:
         if current_idx < window:
             return None
 
-        closes = df.iloc[current_idx - window : current_idx]["close"].values
+        closes = df.iloc[current_idx - window + 1 : current_idx + 1]["close"].values
 
         if len(closes) < window:
             return None

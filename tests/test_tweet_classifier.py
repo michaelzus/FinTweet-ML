@@ -43,10 +43,24 @@ def sample_df() -> pd.DataFrame:
             "tweet_hash": [f"hash_{i}" for i in range(n_samples)],
             "is_reliable_label": [True] * 80 + [False] * 20,
             TARGET_COLUMN: np.random.choice(["SELL", "HOLD", "BUY"], n_samples),
+            # Core numerical features (baseline)
             "volatility_7d": np.random.uniform(0.01, 0.05, n_samples),
             "relative_volume": np.random.uniform(0.5, 2.0, n_samples),
             "rsi_14": np.random.uniform(30, 70, n_samples),
             "distance_from_ma_20": np.random.uniform(-0.1, 0.1, n_samples),
+            # Phase 2: Multi-period momentum
+            "return_5d": np.random.uniform(-0.1, 0.1, n_samples),
+            "return_20d": np.random.uniform(-0.2, 0.2, n_samples),
+            # Phase 2: Trend confirmation
+            "above_ma_20": np.random.choice([0, 1], n_samples).astype(float),
+            "slope_ma_20": np.random.uniform(-0.01, 0.01, n_samples),
+            # Phase 2: Shock/Gap features
+            "gap_open": np.random.uniform(-0.05, 0.05, n_samples),
+            "intraday_range": np.random.uniform(0.01, 0.05, n_samples),
+            # Phase 1: Categorical context features
+            "market_regime": np.random.choice(["trending_up", "trending_down", "volatile", "calm"], n_samples),
+            "sector": np.random.choice(["Technology", "Healthcare", "Finance", "Energy"], n_samples),
+            "market_cap_bucket": np.random.choice(["mega", "large", "mid", "small"], n_samples),
             # Forbidden columns (should be excluded from features)
             "spy_return_1d": np.random.uniform(-0.02, 0.02, n_samples),
             "spy_return_1hr": np.random.uniform(-0.01, 0.01, n_samples),
@@ -103,11 +117,19 @@ class TestCategoricalEncoding:
         """Test that encode_categorical adds index columns."""
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
-            sample_df, encodings["author_to_idx"], encodings["category_to_idx"]
+            sample_df,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],
+            encodings["sector_to_idx"],
+            encodings["market_cap_to_idx"],
         )
 
         assert "author_idx" in encoded_df.columns
         assert "category_idx" in encoded_df.columns
+        assert "market_regime_idx" in encoded_df.columns
+        assert "sector_idx" in encoded_df.columns
+        assert "market_cap_idx" in encoded_df.columns
 
     def test_encode_categorical_handles_unknown_default(self, sample_df: pd.DataFrame):
         """Test unknown values map to 0 with handle_unknown='default'."""
@@ -118,7 +140,13 @@ class TestCategoricalEncoding:
         new_df.loc[0, "author"] = "Unknown Author"
 
         encoded_df = encode_categorical(
-            new_df, encodings["author_to_idx"], encodings["category_to_idx"], handle_unknown="default"
+            new_df,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],
+            encodings["sector_to_idx"],
+            encodings["market_cap_to_idx"],
+            handle_unknown="default",
         )
 
         # Unknown should map to 0
@@ -134,7 +162,13 @@ class TestCategoricalEncoding:
 
         with pytest.raises(ValueError, match="Unknown authors"):
             encode_categorical(
-                new_df, encodings["author_to_idx"], encodings["category_to_idx"], handle_unknown="error"
+                new_df,
+                encodings["author_to_idx"],
+                encodings["category_to_idx"],
+                encodings["market_regime_to_idx"],
+                encodings["sector_to_idx"],
+                encodings["market_cap_to_idx"],
+                handle_unknown="error",
             )
 
 
@@ -168,7 +202,12 @@ class TestTweetDataset:
         sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
-            sample_df, encodings["author_to_idx"], encodings["category_to_idx"]
+            sample_df,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],
+            encodings["sector_to_idx"],
+            encodings["market_cap_to_idx"],
         )
 
         # Scale numerical features
@@ -180,6 +219,9 @@ class TestTweetDataset:
             numerical_features=numerical,
             author_indices=encoded_df["author_idx"],
             category_indices=encoded_df["category_idx"],
+            market_regime_indices=encoded_df["market_regime_idx"],
+            sector_indices=encoded_df["sector_idx"],
+            market_cap_indices=encoded_df["market_cap_idx"],
             labels=encoded_df[TARGET_COLUMN],
             tokenizer=tokenizer,
             max_length=128,
@@ -195,6 +237,9 @@ class TestTweetDataset:
         assert sample["numerical"].shape == (len(NUMERICAL_FEATURES),)
         assert sample["author_idx"].shape == ()
         assert sample["category_idx"].shape == ()
+        assert sample["market_regime_idx"].shape == ()
+        assert sample["sector_idx"].shape == ()
+        assert sample["market_cap_idx"].shape == ()
         assert sample["labels"].shape == ()
 
     def test_dataset_encodes_labels_correctly(self, sample_df: pd.DataFrame):
@@ -203,7 +248,12 @@ class TestTweetDataset:
         sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
-            sample_df, encodings["author_to_idx"], encodings["category_to_idx"]
+            sample_df,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],
+            encodings["sector_to_idx"],
+            encodings["market_cap_to_idx"],
         )
 
         scaler = StandardScaler()
@@ -214,6 +264,9 @@ class TestTweetDataset:
             numerical_features=numerical,
             author_indices=encoded_df["author_idx"],
             category_indices=encoded_df["category_idx"],
+            market_regime_indices=encoded_df["market_regime_idx"],
+            sector_indices=encoded_df["sector_idx"],
+            market_cap_indices=encoded_df["market_cap_idx"],
             labels=encoded_df[TARGET_COLUMN],
             tokenizer=tokenizer,
         )
@@ -369,14 +422,20 @@ class TestFinBERTMultiModal:
 
         batch_size = 4
         seq_len = 128
-        num_features = 4
+        num_features = 10  # Updated for Phase 2 features
         num_authors = 5
         num_categories = 3
+        num_market_regimes = 4
+        num_sectors = 4
+        num_market_caps = 4
 
         model = FinBERTMultiModal(
             num_numerical_features=num_features,
             num_authors=num_authors,
             num_categories=num_categories,
+            num_market_regimes=num_market_regimes,
+            num_sectors=num_sectors,
+            num_market_caps=num_market_caps,
         )
         model.eval()
 
@@ -386,6 +445,9 @@ class TestFinBERTMultiModal:
         numerical = torch.randn(batch_size, num_features)
         author_idx = torch.randint(0, num_authors, (batch_size,))
         category_idx = torch.randint(0, num_categories, (batch_size,))
+        market_regime_idx = torch.randint(0, num_market_regimes, (batch_size,))
+        sector_idx = torch.randint(0, num_sectors, (batch_size,))
+        market_cap_idx = torch.randint(0, num_market_caps, (batch_size,))
 
         with torch.no_grad():
             output = model(
@@ -394,6 +456,9 @@ class TestFinBERTMultiModal:
                 numerical=numerical,
                 author_idx=author_idx,
                 category_idx=category_idx,
+                market_regime_idx=market_regime_idx,
+                sector_idx=sector_idx,
+                market_cap_idx=market_cap_idx,
             )
 
         assert "logits" in output
@@ -408,14 +473,20 @@ class TestFinBERTMultiModal:
 
         batch_size = 4
         seq_len = 128
-        num_features = 4
+        num_features = 10  # Updated for Phase 2 features
         num_authors = 5
         num_categories = 3
+        num_market_regimes = 4
+        num_sectors = 4
+        num_market_caps = 4
 
         model = FinBERTMultiModal(
             num_numerical_features=num_features,
             num_authors=num_authors,
             num_categories=num_categories,
+            num_market_regimes=num_market_regimes,
+            num_sectors=num_sectors,
+            num_market_caps=num_market_caps,
         )
 
         # Create dummy inputs with labels
@@ -424,6 +495,9 @@ class TestFinBERTMultiModal:
         numerical = torch.randn(batch_size, num_features)
         author_idx = torch.randint(0, num_authors, (batch_size,))
         category_idx = torch.randint(0, num_categories, (batch_size,))
+        market_regime_idx = torch.randint(0, num_market_regimes, (batch_size,))
+        sector_idx = torch.randint(0, num_sectors, (batch_size,))
+        market_cap_idx = torch.randint(0, num_market_caps, (batch_size,))
         labels = torch.randint(0, 3, (batch_size,))
 
         output = model(
@@ -432,6 +506,9 @@ class TestFinBERTMultiModal:
             numerical=numerical,
             author_idx=author_idx,
             category_idx=category_idx,
+            market_regime_idx=market_regime_idx,
+            sector_idx=sector_idx,
+            market_cap_idx=market_cap_idx,
             labels=labels,
         )
 
@@ -970,7 +1047,12 @@ class TestEvaluateOnTest:
         sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
-            sample_df, encodings["author_to_idx"], encodings["category_to_idx"]
+            sample_df,
+            encodings["author_to_idx"],
+            encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],
+            encodings["sector_to_idx"],
+            encodings["market_cap_to_idx"],
         )
 
         scaler = StandardScaler()
@@ -981,6 +1063,9 @@ class TestEvaluateOnTest:
             numerical_features=numerical,
             author_indices=encoded_df["author_idx"],
             category_indices=encoded_df["category_idx"],
+            market_regime_indices=encoded_df["market_regime_idx"],
+            sector_indices=encoded_df["sector_idx"],
+            market_cap_indices=encoded_df["market_cap_idx"],
             labels=encoded_df[TARGET_COLUMN],
             tokenizer=MockTokenizer(),
             max_length=128,

@@ -57,53 +57,62 @@ class TweetEnricher:
         """Disconnect from Interactive Brokers."""
         await self.ib_fetcher.disconnect()
 
-    def get_price_at_timestamp(
+    def get_entry_price(
         self,
-        daily_df: pd.DataFrame,
         intraday_df: Optional[pd.DataFrame],
+        daily_df: pd.DataFrame,
         timestamp: datetime,
         session: MarketSession,
     ) -> Tuple[Optional[float], str]:
         """
-        Get price at specific timestamp based on market session.
+        Get realistic entry price - the first price available AFTER tweet.
+
+        Uses the OPEN of the first bar that starts AFTER the tweet timestamp.
+        This represents the earliest realistic fill price (you can't buy at
+        a price that existed before you saw the tweet).
 
         Args:
+            intraday_df: Intraday OHLCV data (15-min bars, should include future data)
             daily_df: Daily OHLCV data
-            intraday_df: Intraday OHLCV data (15-min bars)
             timestamp: Tweet timestamp
             session: Market session enum value
 
         Returns:
             Tuple of (price, data_quality_flag)
         """
-        # Ensure timestamp is timezone-aware
         timestamp = normalize_timestamp(timestamp)
 
-        # For regular hours and extended hours
+        # For regular hours and extended hours - use intraday data
         if session in [MarketSession.REGULAR, MarketSession.PREMARKET, MarketSession.AFTERHOURS]:
             if intraday_df is not None and not intraday_df.empty:
-                # Find closest bar (within 15 minutes for 15-min bars)
-                time_diff = abs(intraday_df.index - timestamp)
-                min_diff = time_diff.min()
+                # Find first bar that starts AFTER tweet (realistic entry)
+                future_bars = intraday_df[intraday_df.index > timestamp]
 
-                if min_diff <= pd.Timedelta(minutes=15):
-                    closest_idx = time_diff.argmin()
-                    closest_time = intraday_df.index[closest_idx]
-                    price = intraday_df.iloc[closest_idx]["close"]
-                    self.logger.debug(f"price_at_tweet: ${price:.2f} at {closest_time} (tweet: {timestamp}, diff: {min_diff})")
-                    return price, f"{session.value}_intraday"
+                if not future_bars.empty:
+                    entry_bar = future_bars.iloc[0]
+                    bar_time = entry_bar.name
+                    price = entry_bar["open"]
+                    delay = bar_time - timestamp
+                    self.logger.debug(
+                        f"entry_price: ${price:.2f} at {bar_time} open "
+                        f"(tweet: {timestamp}, delay: {delay})"
+                    )
+                    return price, f"{session.value}_next_bar_open"
 
-            # Fallback to daily close
-            if not daily_df.empty:
-                price = daily_df.iloc[-1]["close"]
-                return price, f"no_{session.value}_data_used_daily"
+            # Fallback to next day's open
+            tweet_date = timestamp.date()
+            future_daily = daily_df[daily_df.index.date > tweet_date]
+            if not future_daily.empty:
+                price = future_daily.iloc[0]["open"]
+                return price, f"{session.value}_next_day_open"
 
-        # For closed market (overnight, weekends)
+        # For closed market (overnight, weekends) - use next trading day open
         elif session == MarketSession.CLOSED:
-            if not daily_df.empty:
-                # Use previous close
-                price = daily_df.iloc[-1]["close"]
-                return price, "market_closed_used_prev_close"
+            tweet_date = timestamp.date()
+            future_daily = daily_df[daily_df.index.date > tweet_date]
+            if not future_daily.empty:
+                price = future_daily.iloc[0]["open"]
+                return price, "closed_next_day_open"
 
         return None, "no_data_available"
 
@@ -223,22 +232,30 @@ class TweetEnricher:
         else:  # > 0.5%
             return "BUY"
 
-    def _is_reliable_label(self, price_at_tweet_flag: str, price_1hr_after_flag: str) -> bool:
+    def _is_reliable_label(self, entry_price_flag: str, exit_price_flag: str) -> bool:
         """
         Check if 1hr label is based on real intraday prices (not fallbacks).
 
         Args:
-            price_at_tweet_flag: Data quality flag for price at tweet time
-            price_1hr_after_flag: Data quality flag for price 1hr after
+            entry_price_flag: Data quality flag for entry price
+            exit_price_flag: Data quality flag for exit price (1hr after)
 
         Returns:
             True if both prices are from real intraday data, False otherwise
         """
-        unreliable_patterns = ["closed", "unavailable", "no_data"]
+        # Reliable flags contain "next_bar" or "intraday" (actual 15-min bar data)
+        reliable_patterns = ["next_bar_open", "intraday"]
+        unreliable_patterns = ["next_day", "unavailable", "no_data", "closed"]
+
         for pattern in unreliable_patterns:
-            if pattern in price_at_tweet_flag or pattern in price_1hr_after_flag:
+            if pattern in entry_price_flag or pattern in exit_price_flag:
                 return False
-        return True
+
+        # At least one should have reliable intraday data
+        entry_reliable = any(p in entry_price_flag for p in reliable_patterns)
+        exit_reliable = any(p in exit_price_flag for p in reliable_patterns)
+
+        return entry_reliable and exit_reliable
 
     def _compute_tweet_hash(self, text: str) -> str:
         """
@@ -261,8 +278,10 @@ class TweetEnricher:
             "market_regime": None,
             "sector": None,
             "market_cap_bucket": None,
-            "price_at_tweet": None,
-            "price_at_tweet_flag": "no_data",
+            # Entry price (first available price AFTER tweet)
+            "entry_price": None,
+            "entry_price_flag": "no_data",
+            # Technical indicators (all backward-looking from day before tweet)
             "return_1d": None,
             "return_5d": None,
             "return_20d": None,
@@ -275,17 +294,17 @@ class TweetEnricher:
             "gap_open": None,
             "intraday_range": None,
             "spy_return_1d": None,
+            # 1-hour exit (for labels)
+            "exit_price_1hr": None,
+            "exit_price_1hr_flag": "no_data",
             "spy_return_1hr": None,
-            "price_1hr_after": None,
-            "price_1hr_after_flag": "no_data",
             "return_1hr": None,
             "return_1hr_adjusted": None,
             "label_5class": None,
-            # NEW: 3-class label and data quality
             "label_3class": None,
             "is_reliable_label": False,
             "tweet_hash": None,
-            # NEW: 1-day labels (next open)
+            # 1-day labels (next trading day open)
             "price_next_open": None,
             "price_next_open_flag": "no_data",
             "return_to_next_open": None,
@@ -342,11 +361,15 @@ class TweetEnricher:
         # Determine market session
         session = get_market_session(timestamp)
 
-        # Get price at tweet time
-        price_at_tweet, price_flag = self.get_price_at_timestamp(daily_df, intraday_df, timestamp, session)
+        # Get entry price (first available price AFTER tweet - realistic execution)
+        entry_price, entry_price_flag = self.get_entry_price(
+            intraday_df, daily_df_for_next_open, timestamp, session
+        )
 
-        # Get price 1hr after
-        price_1hr_after, price_1hr_flag = self.get_price_n_hr_after(intraday_df, daily_df, timestamp, hours_after=1.0)
+        # Get exit price 1hr after tweet
+        exit_price_1hr, exit_price_1hr_flag = self.get_price_n_hr_after(
+            intraday_df, daily_df, timestamp, hours_after=1.0
+        )
 
         # Find closest daily bar for indicator calculation
         tweet_date = timestamp.date()
@@ -397,37 +420,39 @@ class TweetEnricher:
         # Get SPY intraday data for 1hr return calculation
         spy_intraday_df_full = self.cache.get_intraday("SPY")
 
-        # Calculate SPY 1-hour return (same time window as stock)
+        # Calculate SPY 1-hour return (same time window as stock for market adjustment)
         spy_return_1hr = None
-        spy_price_at_tweet = None
-        spy_price_1hr_after = None
 
         # CRITICAL: Slice SPY intraday to only include data UP TO 1 hour after tweet
         spy_intraday_df = None
         if spy_intraday_df_full is not None and not spy_intraday_df_full.empty:
             spy_intraday_df = spy_intraday_df_full[spy_intraday_df_full.index <= max_intraday_time].copy()
 
-        if spy_df is not None and not spy_df.empty:
-            # Use SLICED SPY data (already filtered above)
+        if spy_df_full is not None and not spy_df_full.empty:
+            # Use full SPY data for entry price (needs future data for next bar open)
             spy_session = get_market_session(timestamp)
-            spy_price_at_tweet, _ = self.get_price_at_timestamp(spy_df, spy_intraday_df, timestamp, spy_session)
+            spy_entry_price, _ = self.get_entry_price(
+                spy_intraday_df, spy_df_full, timestamp, spy_session
+            )
 
-            # Get SPY price 1hr after
-            spy_price_1hr_after, _ = self.get_price_n_hr_after(spy_intraday_df, spy_df, timestamp, hours_after=1.0)
+            # Get SPY exit price 1hr after
+            spy_exit_price_1hr, _ = self.get_price_n_hr_after(
+                spy_intraday_df, spy_df, timestamp, hours_after=1.0
+            )
 
-            # Calculate SPY 1hr return
-            if spy_price_at_tweet and spy_price_1hr_after:
-                spy_return_1hr = (spy_price_1hr_after - spy_price_at_tweet) / spy_price_at_tweet
-                self.logger.debug(f"SPY return_1hr: {spy_return_1hr} ({spy_price_at_tweet} -> {spy_price_1hr_after})")
+            # Calculate SPY 1hr return (for market adjustment)
+            if spy_entry_price and spy_exit_price_1hr:
+                spy_return_1hr = (spy_exit_price_1hr - spy_entry_price) / spy_entry_price
+                self.logger.debug(f"SPY return_1hr: {spy_return_1hr} ({spy_entry_price} -> {spy_exit_price_1hr})")
             else:
                 self.logger.warning("Could not calculate SPY 1hr return - missing prices")
 
-        # Calculate returns
+        # Calculate returns (entry to exit)
         return_1hr = None
         return_1hr_adjusted = None
 
-        if price_at_tweet and price_1hr_after:
-            return_1hr = (price_1hr_after - price_at_tweet) / price_at_tweet
+        if entry_price and exit_price_1hr:
+            return_1hr = (exit_price_1hr - entry_price) / entry_price
 
             if spy_return_1hr is not None:
                 # Market-adjusted return (subtract SPY return over SAME timeframe)
@@ -444,7 +469,7 @@ class TweetEnricher:
         label_3class = self._classify_return_3class(return_1hr_adjusted)
 
         # Check if 1hr label is reliable (based on real intraday prices)
-        is_reliable_label = self._is_reliable_label(price_flag, price_1hr_flag)
+        is_reliable_label = self._is_reliable_label(entry_price_flag, exit_price_1hr_flag)
 
         # Compute tweet hash for duplicate detection in train/test splits
         tweet_hash = self._compute_tweet_hash(tweet_row["text"])
@@ -454,10 +479,10 @@ class TweetEnricher:
             daily_df_for_next_open, timestamp
         )
 
-        # Calculate return to next open
+        # Calculate return to next open (using entry price as base)
         return_to_next_open = None
-        if price_at_tweet and price_next_open:
-            return_to_next_open = (price_next_open - price_at_tweet) / price_at_tweet
+        if entry_price and price_next_open:
+            return_to_next_open = (price_next_open - entry_price) / entry_price
 
         # Classify 1-day labels (same thresholds as 1hr)
         label_1d_5class = self._classify_return(return_to_next_open)
@@ -474,8 +499,10 @@ class TweetEnricher:
             "market_regime": market_regime,
             "sector": stock_metadata.get("sector"),
             "market_cap_bucket": stock_metadata.get("market_cap_bucket"),
-            "price_at_tweet": price_at_tweet,
-            "price_at_tweet_flag": price_flag,
+            # Entry price (first available AFTER tweet - realistic execution)
+            "entry_price": entry_price,
+            "entry_price_flag": entry_price_flag,
+            # Technical indicators (backward-looking from day before tweet)
             "return_1d": indicators["return_1d"],
             "return_5d": indicators["return_5d"],
             "return_20d": indicators["return_20d"],
@@ -488,17 +515,17 @@ class TweetEnricher:
             "gap_open": indicators["gap_open"],
             "intraday_range": indicators["intraday_range"],
             "spy_return_1d": spy_return_1d,
+            # 1-hour exit (for labels)
+            "exit_price_1hr": exit_price_1hr,
+            "exit_price_1hr_flag": exit_price_1hr_flag,
             "spy_return_1hr": spy_return_1hr,
-            "price_1hr_after": price_1hr_after,
-            "price_1hr_after_flag": price_1hr_flag,
             "return_1hr": return_1hr,
             "return_1hr_adjusted": return_1hr_adjusted,
             "label_5class": label_5class,
-            # NEW: 3-class label and data quality
             "label_3class": label_3class,
             "is_reliable_label": is_reliable_label,
             "tweet_hash": tweet_hash,
-            # NEW: 1-day labels (next open)
+            # 1-day labels (next trading day open)
             "price_next_open": price_next_open,
             "price_next_open_flag": price_next_open_flag,
             "return_to_next_open": return_to_next_open,
@@ -533,7 +560,7 @@ class TweetEnricher:
             results.append(result)
 
             # Print concise summary
-            status = "OK" if result["price_at_tweet"] is not None else "FAIL"
+            status = "OK" if result["entry_price"] is not None else "FAIL"
             label = result["label_5class"] or "N/A"
             ret_adj = result["return_1hr_adjusted"]
             return_str = f"{ret_adj:.2%}" if ret_adj is not None else "N/A"
@@ -552,34 +579,39 @@ class TweetEnricher:
             "market_regime",
             "sector",
             "market_cap_bucket",
-            "price_at_tweet",
-            "price_at_tweet_flag",
-            "price_1hr_after",
-            "price_1hr_after_flag",
+            # Entry/exit prices (for labels)
+            "entry_price",
+            "entry_price_flag",
+            "exit_price_1hr",
+            "exit_price_1hr_flag",
             "return_1hr",
             "return_1hr_adjusted",
             "label_5class",
-            "label_3class",             # NEW: 3-class label
-            "price_next_open",          # NEW: next trading day open
-            "price_next_open_flag",     # NEW: data quality flag
-            "return_to_next_open",      # NEW: return to next open
-            "label_1d_5class",          # NEW: 1-day 5-class label
-            "label_1d_3class",          # NEW: 1-day 3-class label
-            "is_reliable_label",        # NEW: data quality flag
-            "tweet_hash",               # NEW: for duplicate detection
+            "label_3class",
+            # 1-day labels
+            "price_next_open",
+            "price_next_open_flag",
+            "return_to_next_open",
+            "label_1d_5class",
+            "label_1d_3class",
+            # Data quality
+            "is_reliable_label",
+            "tweet_hash",
+            # Technical indicators (backward-looking features)
             "return_1d",
-            "return_5d",                # NEW: 5-day momentum
-            "return_20d",               # NEW: 20-day momentum
+            "return_5d",
+            "return_20d",
             "volatility_7d",
             "relative_volume",
             "rsi_14",
             "distance_from_ma_20",
-            "above_ma_20",              # NEW: binary trend indicator
-            "slope_ma_20",              # NEW: MA trend direction
-            "gap_open",                 # NEW: overnight gap
-            "intraday_range",           # NEW: intraday volatility
+            "above_ma_20",
+            "slope_ma_20",
+            "gap_open",
+            "intraday_range",
             "spy_return_1d",
             "spy_return_1hr",
+            # Original tweet data
             "tweet_url",
             "text",
         ]

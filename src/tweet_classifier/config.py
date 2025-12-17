@@ -55,7 +55,8 @@ EXCLUDED_FROM_FEATURES = [
     "spy_return_1hr",  # Future SPY movement
     "return_1hr",  # Target
     "return_to_next_open",  # Target
-    "price_1hr_after",  # Future price
+    "entry_price",  # Execution price (not a feature)
+    "exit_price_1hr",  # Future price
     "price_next_open",  # Future price
     "label_3class",  # Target (backup)
     "label_1d_3class",  # Target (primary)
