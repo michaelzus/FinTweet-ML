@@ -113,8 +113,14 @@ class MarketRegimeClassifier:
             return self._regime_cache[date_key]
 
         # Find index for the given date
+        if spy_df.empty:
+            logger.warning(f"Empty SPY DataFrame for date {date_key}")
+            regime = "calm"  # Default
+            self._regime_cache[date_key] = regime
+            return regime
+
         spy_dates = spy_df.index.date if hasattr(spy_df.index[0], "date") else spy_df.index
-        valid_indices = [i for i, d in enumerate(spy_dates) if d <= date_key]
+        valid_indices = [i for i, d in enumerate(spy_dates) if d < date_key]
 
         if not valid_indices:
             logger.warning(f"No SPY data available for date {date_key}")
