@@ -1,6 +1,8 @@
 """Data splitting utilities for tweet classification.
 
-Splits data by tweet_hash to prevent text leakage across train/val/test sets.
+Supports two splitting strategies:
+1. split_by_hash: Random split by tweet_hash (prevents text leakage)
+2. split_by_time: Temporal split by timestamp (train on early, test on late)
 """
 
 from typing import Tuple
@@ -126,4 +128,104 @@ def verify_no_leakage(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.
         raise ValueError(f"Leakage: {len(val_test_overlap)} hashes appear in both val and test")
 
     return True
+
+
+def split_by_time(
+    df: pd.DataFrame,
+    test_size: float = DEFAULT_TEST_SIZE,
+    val_size: float = DEFAULT_VAL_SIZE,
+    timestamp_col: str = "timestamp",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split DataFrame by timestamp for temporal validation.
+
+    This split ensures that training data is from earlier dates and test data
+    is from later dates, simulating real-world trading scenarios where we only
+    have past data to train and predict future returns.
+
+    Args:
+        df: Input DataFrame with timestamp column.
+        test_size: Fraction of data for test set (latest dates). Default: 0.15.
+        val_size: Fraction of data for validation set (middle dates). Default: 0.15.
+        timestamp_col: Name of timestamp column. Default: "timestamp".
+
+    Returns:
+        Tuple of (df_train, df_val, df_test) DataFrames sorted by time.
+        - df_train: Earliest dates (70% by default)
+        - df_val: Middle dates (15% by default)
+        - df_test: Latest dates (15% by default)
+
+    Raises:
+        ValueError: If timestamp column is missing or not datetime.
+    """
+    if timestamp_col not in df.columns:
+        raise ValueError(f"DataFrame must have '{timestamp_col}' column for temporal splitting")
+
+    # Ensure timestamp is datetime
+    df = df.copy()
+    if not pd.api.types.is_datetime64_any_dtype(df[timestamp_col]):
+        df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+
+    # Sort by timestamp
+    df_sorted = df.sort_values(timestamp_col).reset_index(drop=True)
+
+    # Calculate split indices
+    n_samples = len(df_sorted)
+    train_end_idx = int(n_samples * (1 - test_size - val_size))
+    val_end_idx = int(n_samples * (1 - test_size))
+
+    # Split
+    df_train = df_sorted.iloc[:train_end_idx].copy()
+    df_val = df_sorted.iloc[train_end_idx:val_end_idx].copy()
+    df_test = df_sorted.iloc[val_end_idx:].copy()
+
+    return df_train, df_val, df_test
+
+
+def get_temporal_split_summary(
+    df_train: pd.DataFrame,
+    df_val: pd.DataFrame,
+    df_test: pd.DataFrame,
+    timestamp_col: str = "timestamp",
+) -> dict:
+    """Generate summary of temporal data splits.
+
+    Args:
+        df_train: Training DataFrame.
+        df_val: Validation DataFrame.
+        df_test: Test DataFrame.
+        timestamp_col: Name of timestamp column.
+
+    Returns:
+        Dictionary with split statistics including date ranges.
+    """
+    total = len(df_train) + len(df_val) + len(df_test)
+
+    def get_date_range(df: pd.DataFrame) -> dict:
+        if len(df) == 0:
+            return {"start": None, "end": None}
+        return {
+            "start": str(df[timestamp_col].min()),
+            "end": str(df[timestamp_col].max()),
+        }
+
+    summary = {
+        "train": {
+            "samples": len(df_train),
+            "percentage": 100 * len(df_train) / total,
+            "date_range": get_date_range(df_train),
+        },
+        "val": {
+            "samples": len(df_val),
+            "percentage": 100 * len(df_val) / total,
+            "date_range": get_date_range(df_val),
+        },
+        "test": {
+            "samples": len(df_test),
+            "percentage": 100 * len(df_test) / total,
+            "date_range": get_date_range(df_test),
+        },
+        "total": total,
+    }
+
+    return summary
 

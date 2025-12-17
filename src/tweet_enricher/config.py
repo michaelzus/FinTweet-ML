@@ -1,5 +1,6 @@
 """Configuration constants for tweet_enricher package."""
 
+import os
 from pathlib import Path
 
 import pytz
@@ -65,4 +66,17 @@ REGIME_LOOKBACK_VOL = 7  # days
 
 # Stock metadata cache
 METADATA_CACHE_FILE = Path("data/stock_metadata.json")
+
+# TwitterAPI.io settings
+TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
+TWITTER_DB_PATH = Path("data/tweets.db")
+TWITTER_RATE_LIMIT_DELAY = 5.0  # seconds between requests (free tier limit)
+TWITTER_ACCOUNTS = [
+    "StockMKTNewz",
+    "wallstengine",
+    "amitisinvesting",
+    "AIStockSavvy",
+    "fiscal_ai",
+    "EconomyApp",
+]
 

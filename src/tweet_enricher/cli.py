@@ -19,6 +19,7 @@ from tweet_enricher.config import (
     ET,
     EXCLUDED_TICKERS,
     MARKET_CLOSE,
+    TWITTER_ACCOUNTS,
 )
 from tweet_enricher.core.enricher import TweetEnricher
 from tweet_enricher.core.indicators import TechnicalIndicators
@@ -32,6 +33,9 @@ from tweet_enricher.data.tickers import (
 )
 from tweet_enricher.io.feather import save_daily_data
 from tweet_enricher.parsers.discord import DiscordToCSVConverter
+from tweet_enricher.twitter.client import TwitterClient
+from tweet_enricher.twitter.database import TweetDatabase
+from tweet_enricher.twitter.sync import SyncService
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -346,6 +350,170 @@ def cmd_filter_volume(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
+# Subcommand: twitter sync
+# ============================================================================
+def cmd_twitter_sync(args: argparse.Namespace) -> int:
+    """Sync tweets from Twitter accounts."""
+    setup_logging(args.verbose)
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Initialize sync service
+        accounts = [args.account] if args.account else None
+        sync_service = SyncService(accounts=accounts)
+
+        # Test connection first
+        logger.info("Testing Twitter API connection...")
+        if not sync_service.client.test_connection():
+            logger.error("Failed to connect to Twitter API")
+            logger.error("Make sure TWITTER_API_KEY environment variable is set")
+            return 1
+        logger.info("Connection successful!")
+
+        # Perform sync
+        if args.account:
+            logger.info(f"Syncing account: @{args.account}")
+            result = sync_service.sync_account(
+                account=args.account,
+                full_sync=args.full,
+                max_tweets=args.max_tweets,
+            )
+            results = [result]
+        else:
+            logger.info(f"Syncing all {len(TWITTER_ACCOUNTS)} configured accounts")
+            results = sync_service.sync_all(
+                full_sync=args.full,
+                max_tweets_per_account=args.max_tweets,
+            )
+
+        # Print summary
+        print("\n" + "=" * 60)
+        print("SYNC SUMMARY")
+        print("=" * 60)
+        total_raw = 0
+        total_processed = 0
+        total_api_calls = 0
+        for r in results:
+            if "error" in r:
+                print(f"  @{r['account']}: ERROR - {r['error']}")
+            else:
+                raw = r.get("raw_tweets_fetched", 0)
+                processed = r.get("processed_tweets_added", 0)
+                api_calls = r.get("api_calls", 0)
+                total_raw += raw
+                total_processed += processed
+                total_api_calls += api_calls
+                print(f"  @{r['account']}: {raw} raw, {processed} processed ({api_calls} API calls)")
+
+        print("-" * 60)
+        print(f"  TOTAL: {total_raw} raw, {total_processed} processed ({total_api_calls} API calls)")
+        print("=" * 60)
+
+        return 0
+
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Sync failed: {e}")
+        return 1
+
+
+# ============================================================================
+# Subcommand: twitter status
+# ============================================================================
+def cmd_twitter_status(args: argparse.Namespace) -> int:
+    """Show Twitter sync status."""
+    setup_logging(args.verbose)
+
+    try:
+        database = TweetDatabase()
+        sync_service = SyncService(database=database, lazy_client=True)
+        status = sync_service.get_status()
+
+        print("\n" + "=" * 60)
+        print("TWITTER SYNC STATUS")
+        print("=" * 60)
+
+        # Database stats
+        db_stats = status["database"]
+        print("\nDatabase Statistics:")
+        print(f"  Total rows:      {db_stats['total_rows']:,}")
+        print(f"  Unique tweets:   {db_stats['unique_tweets']:,}")
+        print(f"  Unique tickers:  {db_stats['unique_tickers']:,}")
+        print(f"  Unique authors:  {db_stats['unique_authors']:,}")
+
+        if db_stats["date_range"]:
+            print(f"  Date range:      {db_stats['date_range']['min']} to {db_stats['date_range']['max']}")
+
+        # Account status
+        print("\nAccount Status:")
+        print("-" * 60)
+        print(f"  {'Account':<20} {'Last Sync':<20} {'Tweets':>10}")
+        print("-" * 60)
+
+        for acc in status["accounts"]:
+            last_sync = acc["last_sync"][:19] if acc["last_sync"] else "Never"
+            tweets = acc["total_tweets"]
+            print(f"  @{acc['account']:<19} {last_sync:<20} {tweets:>10,}")
+
+        print("=" * 60)
+
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+# ============================================================================
+# Subcommand: twitter export
+# ============================================================================
+def cmd_twitter_export(args: argparse.Namespace) -> int:
+    """Export tweets to CSV."""
+    setup_logging(args.verbose)
+    logger = logging.getLogger(__name__)
+
+    try:
+        database = TweetDatabase()
+        sync_service = SyncService(database=database, lazy_client=True)
+
+        # Parse date filters
+        since = None
+        until = None
+
+        if args.since:
+            since = datetime.strptime(args.since, "%Y-%m-%d")
+            since = ET.localize(since)
+            logger.info(f"Filtering from: {args.since}")
+
+        if args.until:
+            until = datetime.strptime(args.until, "%Y-%m-%d")
+            until = ET.localize(until.replace(hour=23, minute=59, second=59))
+            logger.info(f"Filtering until: {args.until}")
+
+        # Export
+        count = sync_service.export_csv(
+            output_path=args.output,
+            since=since,
+            until=until,
+            account=args.account,
+            ticker=args.ticker,
+        )
+
+        if count > 0:
+            print(f"\nExported {count:,} tweets to {args.output}")
+        else:
+            print("\nNo tweets found matching criteria")
+
+        return 0
+
+    except Exception as e:
+        logger.error(f"Export failed: {e}")
+        return 1
+
+
+# ============================================================================
 # Main entry point
 # ============================================================================
 def main() -> int:
@@ -448,6 +616,63 @@ Examples:
     filter_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     filter_parser.set_defaults(func=cmd_filter_volume)
 
+    # ============ twitter subcommand group ============
+    twitter_parser = subparsers.add_parser(
+        "twitter",
+        help="Twitter API operations (sync, status, export)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    twitter_subparsers = twitter_parser.add_subparsers(dest="twitter_command", help="Twitter commands")
+
+    # twitter sync
+    twitter_sync_parser = twitter_subparsers.add_parser(
+        "sync",
+        help="Sync tweets from configured Twitter accounts",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  tweet-enricher twitter sync                    # Sync all accounts
+  tweet-enricher twitter sync --account StockMKTNewz  # Sync specific account
+  tweet-enricher twitter sync --full             # Full re-sync (ignore cursor)
+  tweet-enricher twitter sync --max-tweets 100   # Limit tweets per account
+        """,
+    )
+    twitter_sync_parser.add_argument("--account", help="Specific account to sync (default: all)")
+    twitter_sync_parser.add_argument("--full", action="store_true", help="Full re-sync, ignore previous cursor")
+    twitter_sync_parser.add_argument("--max-tweets", type=int, help="Max tweets to fetch per account")
+    twitter_sync_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    twitter_sync_parser.set_defaults(func=cmd_twitter_sync)
+
+    # twitter status
+    twitter_status_parser = twitter_subparsers.add_parser(
+        "status",
+        help="Show sync status for all accounts",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    twitter_status_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    twitter_status_parser.set_defaults(func=cmd_twitter_status)
+
+    # twitter export
+    twitter_export_parser = twitter_subparsers.add_parser(
+        "export",
+        help="Export tweets to CSV file",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  tweet-enricher twitter export -o tweets.csv
+  tweet-enricher twitter export -o tweets.csv --since 2025-12-01
+  tweet-enricher twitter export -o tweets.csv --account StockMKTNewz
+  tweet-enricher twitter export -o tweets.csv --ticker NVDA
+        """,
+    )
+    twitter_export_parser.add_argument("-o", "--output", required=True, help="Output CSV file")
+    twitter_export_parser.add_argument("--since", help="Start date filter (YYYY-MM-DD)")
+    twitter_export_parser.add_argument("--until", help="End date filter (YYYY-MM-DD)")
+    twitter_export_parser.add_argument("--account", help="Filter by account")
+    twitter_export_parser.add_argument("--ticker", help="Filter by ticker")
+    twitter_export_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    twitter_export_parser.set_defaults(func=cmd_twitter_export)
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -461,6 +686,12 @@ Examples:
             fetch_parser.error("Either --symbols, --sp500, --russell1000, or --all must be provided")
         if sum([bool(args.symbols), args.sp500, args.russell1000, args.all]) > 1:
             fetch_parser.error("Please provide only one of: --symbols, --sp500, --russell1000, or --all")
+
+    # Handle twitter subcommand group
+    if args.command == "twitter":
+        if args.twitter_command is None:
+            twitter_parser.print_help()
+            return 0
 
     return args.func(args)
 

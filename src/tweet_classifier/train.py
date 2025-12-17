@@ -34,7 +34,13 @@ from tweet_classifier.config import (
     TARGET_COLUMN,
 )
 from tweet_classifier.data.loader import filter_reliable, load_enriched_data
-from tweet_classifier.data.splitter import get_split_summary, split_by_hash, verify_no_leakage
+from tweet_classifier.data.splitter import (
+    get_split_summary,
+    get_temporal_split_summary,
+    split_by_hash,
+    split_by_time,
+    verify_no_leakage,
+)
 from tweet_classifier.data.weights import compute_class_weights, get_weight_summary, weights_to_tensor
 from tweet_classifier.dataset import (
     create_categorical_encodings,
@@ -116,6 +122,7 @@ def train(
     freeze_bert: bool = False,
     dropout: float = DEFAULT_DROPOUT,
     evaluate_test: bool = False,
+    temporal_split: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Train the FinBERT multi-modal tweet classifier.
 
@@ -128,6 +135,7 @@ def train(
         freeze_bert: If True, freeze BERT parameters (faster training).
         dropout: Dropout probability for regularization.
         evaluate_test: If True, run full evaluation on test set after training.
+        temporal_split: If True, split by timestamp (train early, test late).
 
     Returns:
         Dictionary with test evaluation results if evaluate_test=True, else None.
@@ -149,15 +157,25 @@ def train(
     df_reliable = filter_reliable(df)
     logger.info(f"After filtering: {len(df_reliable)} reliable samples")
 
-    # ========== Step 2: Split by hash ==========
-    logger.info("Splitting data by tweet_hash...")
-    df_train, df_val, df_test = split_by_hash(df_reliable)
-    verify_no_leakage(df_train, df_val, df_test)
-
-    split_summary = get_split_summary(df_train, df_val, df_test)
-    logger.info(f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)")
-    logger.info(f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)")
-    logger.info(f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)")
+    # ========== Step 2: Split data ==========
+    if temporal_split:
+        logger.info("Splitting data by TIMESTAMP (temporal validation)...")
+        df_train, df_val, df_test = split_by_time(df_reliable)
+        split_summary = get_temporal_split_summary(df_train, df_val, df_test)
+        logger.info(f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)")
+        logger.info(f"  Date range: {split_summary['train']['date_range']['start']} to {split_summary['train']['date_range']['end']}")
+        logger.info(f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)")
+        logger.info(f"  Date range: {split_summary['val']['date_range']['start']} to {split_summary['val']['date_range']['end']}")
+        logger.info(f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)")
+        logger.info(f"  Date range: {split_summary['test']['date_range']['start']} to {split_summary['test']['date_range']['end']}")
+    else:
+        logger.info("Splitting data by tweet_hash (random)...")
+        df_train, df_val, df_test = split_by_hash(df_reliable)
+        verify_no_leakage(df_train, df_val, df_test)
+        split_summary = get_split_summary(df_train, df_val, df_test)
+        logger.info(f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)")
+        logger.info(f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)")
+        logger.info(f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)")
 
     # ========== Step 3: Create categorical encodings ==========
     logger.info("Creating categorical encodings from training data...")
@@ -355,6 +373,11 @@ def main() -> None:
         action="store_true",
         help="Run full evaluation on test set after training (confusion matrix, trading metrics, baselines)",
     )
+    parser.add_argument(
+        "--temporal-split",
+        action="store_true",
+        help="Use temporal split (train on early dates, test on late dates) instead of random hash split",
+    )
 
     args = parser.parse_args()
 
@@ -367,6 +390,7 @@ def main() -> None:
         freeze_bert=args.freeze_bert,
         dropout=args.dropout,
         evaluate_test=args.evaluate_test,
+        temporal_split=args.temporal_split,
     )
 
 

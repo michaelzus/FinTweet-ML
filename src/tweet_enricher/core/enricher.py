@@ -251,7 +251,7 @@ class TweetEnricher:
             if pattern in entry_price_flag or pattern in exit_price_flag:
                 return False
 
-        # At least one should have reliable intraday data
+        # Both entry and exit must use reliable intraday data patterns
         entry_reliable = any(p in entry_price_flag for p in reliable_patterns)
         exit_reliable = any(p in exit_price_flag for p in reliable_patterns)
 
