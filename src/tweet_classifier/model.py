@@ -20,8 +20,11 @@ from tweet_classifier.config import (
     CATEGORY_EMBEDDING_DIM,
     DEFAULT_DROPOUT,
     FINBERT_MODEL_NAME,
+    MARKET_CAP_EMBEDDING_DIM,
+    MARKET_REGIME_EMBEDDING_DIM,
     NUM_CLASSES,
     NUMERICAL_HIDDEN_DIM,
+    SECTOR_EMBEDDING_DIM,
 )
 
 
@@ -33,7 +36,8 @@ class FinBERTMultiModal(nn.Module):
         - Numerical encoder: MLP (num_features -> 64 -> 32)
         - Author embedding: 16-dim
         - Category embedding: 8-dim
-        - Fusion: Concatenate all (824-dim) -> classifier (3 classes)
+        - Phase 1: Market regime (4-dim), Sector (8-dim), Market cap (4-dim)
+        - Fusion: Concatenate all (840-dim with Phase 1) -> classifier (3 classes)
     """
 
     def __init__(
@@ -41,12 +45,18 @@ class FinBERTMultiModal(nn.Module):
         num_numerical_features: int,
         num_authors: int,
         num_categories: int,
+        num_market_regimes: int = 5,  # Phase 1
+        num_sectors: int = 12,  # Phase 1
+        num_market_caps: int = 5,  # Phase 1
         num_classes: int = NUM_CLASSES,
         finbert_model: str = FINBERT_MODEL_NAME,
         freeze_bert: bool = False,
         dropout: float = DEFAULT_DROPOUT,
         author_embedding_dim: int = AUTHOR_EMBEDDING_DIM,
         category_embedding_dim: int = CATEGORY_EMBEDDING_DIM,
+        market_regime_embedding_dim: int = MARKET_REGIME_EMBEDDING_DIM,  # Phase 1
+        sector_embedding_dim: int = SECTOR_EMBEDDING_DIM,  # Phase 1
+        market_cap_embedding_dim: int = MARKET_CAP_EMBEDDING_DIM,  # Phase 1
         numerical_hidden_dim: int = NUMERICAL_HIDDEN_DIM,
     ):
         """Initialize the multi-modal model.
@@ -55,12 +65,18 @@ class FinBERTMultiModal(nn.Module):
             num_numerical_features: Number of numerical input features.
             num_authors: Number of unique authors for embedding.
             num_categories: Number of unique categories for embedding.
+            num_market_regimes: Number of unique market regimes (Phase 1).
+            num_sectors: Number of unique sectors (Phase 1).
+            num_market_caps: Number of unique market cap buckets (Phase 1).
             num_classes: Number of output classes (default: 3 for SELL/HOLD/BUY).
             finbert_model: HuggingFace model name for FinBERT.
             freeze_bert: If True, freeze BERT parameters (no fine-tuning).
             dropout: Dropout probability for regularization.
             author_embedding_dim: Dimension of author embeddings.
             category_embedding_dim: Dimension of category embeddings.
+            market_regime_embedding_dim: Dimension of market regime embeddings (Phase 1).
+            sector_embedding_dim: Dimension of sector embeddings (Phase 1).
+            market_cap_embedding_dim: Dimension of market cap embeddings (Phase 1).
             numerical_hidden_dim: Hidden dimension for numerical encoder output.
         """
         super().__init__()
@@ -69,12 +85,18 @@ class FinBERTMultiModal(nn.Module):
         self.num_numerical_features = num_numerical_features
         self.num_authors = num_authors
         self.num_categories = num_categories
+        self.num_market_regimes = num_market_regimes
+        self.num_sectors = num_sectors
+        self.num_market_caps = num_market_caps
         self.num_classes = num_classes
         self.finbert_model_name = finbert_model
         self.freeze_bert = freeze_bert
         self.dropout_prob = dropout
         self.author_embedding_dim = author_embedding_dim
         self.category_embedding_dim = category_embedding_dim
+        self.market_regime_embedding_dim = market_regime_embedding_dim
+        self.sector_embedding_dim = sector_embedding_dim
+        self.market_cap_embedding_dim = market_cap_embedding_dim
         self.numerical_hidden_dim = numerical_hidden_dim
 
         # FinBERT encoder
@@ -88,6 +110,11 @@ class FinBERTMultiModal(nn.Module):
         # Categorical embeddings (to reduce author bias)
         self.author_embedding = nn.Embedding(num_authors, author_embedding_dim)
         self.category_embedding = nn.Embedding(num_categories, category_embedding_dim)
+        
+        # Phase 1: Context embeddings
+        self.market_regime_embedding = nn.Embedding(num_market_regimes, market_regime_embedding_dim)
+        self.sector_embedding = nn.Embedding(num_sectors, sector_embedding_dim)
+        self.market_cap_embedding = nn.Embedding(num_market_caps, market_cap_embedding_dim)
 
         # Numerical feature encoder
         self.numerical_encoder = nn.Sequential(
@@ -99,8 +126,17 @@ class FinBERTMultiModal(nn.Module):
         )
 
         # Fusion + classifier
-        # 768 (BERT) + 32 (numerical) + 16 (author) + 8 (category) = 824
-        fusion_size = bert_hidden_size + numerical_hidden_dim + author_embedding_dim + category_embedding_dim
+        # 768 (BERT) + 32 (numerical) + 16 (author) + 8 (category)
+        # + 4 (market_regime) + 8 (sector) + 4 (market_cap) = 840
+        fusion_size = (
+            bert_hidden_size
+            + numerical_hidden_dim
+            + author_embedding_dim
+            + category_embedding_dim
+            + market_regime_embedding_dim
+            + sector_embedding_dim
+            + market_cap_embedding_dim
+        )
 
         self.classifier = nn.Sequential(
             nn.Dropout(dropout),
@@ -117,6 +153,9 @@ class FinBERTMultiModal(nn.Module):
         numerical: torch.Tensor,
         author_idx: torch.Tensor,
         category_idx: torch.Tensor,
+        market_regime_idx: torch.Tensor,  # Phase 1
+        sector_idx: torch.Tensor,  # Phase 1
+        market_cap_idx: torch.Tensor,  # Phase 1
         labels: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Forward pass through the multi-modal model.
@@ -127,6 +166,9 @@ class FinBERTMultiModal(nn.Module):
             numerical: Numerical features, shape (batch_size, num_features).
             author_idx: Author indices, shape (batch_size,).
             category_idx: Category indices, shape (batch_size,).
+            market_regime_idx: Market regime indices, shape (batch_size,). [Phase 1]
+            sector_idx: Sector indices, shape (batch_size,). [Phase 1]
+            market_cap_idx: Market cap indices, shape (batch_size,). [Phase 1]
             labels: Optional labels for loss computation, shape (batch_size,).
 
         Returns:
@@ -144,9 +186,16 @@ class FinBERTMultiModal(nn.Module):
         # Encode categorical features
         author_emb = self.author_embedding(author_idx)  # [batch, 16]
         category_emb = self.category_embedding(category_idx)  # [batch, 8]
+        
+        # Phase 1: Encode context features
+        regime_emb = self.market_regime_embedding(market_regime_idx)  # [batch, 4]
+        sector_emb = self.sector_embedding(sector_idx)  # [batch, 8]
+        market_cap_emb = self.market_cap_embedding(market_cap_idx)  # [batch, 4]
 
         # Fusion
-        combined = torch.cat([cls_embedding, num_embedding, author_emb, category_emb], dim=1)
+        combined = torch.cat(
+            [cls_embedding, num_embedding, author_emb, category_emb, regime_emb, sector_emb, market_cap_emb], dim=1
+        )
 
         # Classification
         logits = self.classifier(combined)  # [batch, num_classes]
@@ -169,12 +218,18 @@ class FinBERTMultiModal(nn.Module):
             "num_numerical_features": self.num_numerical_features,
             "num_authors": self.num_authors,
             "num_categories": self.num_categories,
+            "num_market_regimes": self.num_market_regimes,
+            "num_sectors": self.num_sectors,
+            "num_market_caps": self.num_market_caps,
             "num_classes": self.num_classes,
             "finbert_model": self.finbert_model_name,
             "freeze_bert": self.freeze_bert,
             "dropout": self.dropout_prob,
             "author_embedding_dim": self.author_embedding_dim,
             "category_embedding_dim": self.category_embedding_dim,
+            "market_regime_embedding_dim": self.market_regime_embedding_dim,
+            "sector_embedding_dim": self.sector_embedding_dim,
+            "market_cap_embedding_dim": self.market_cap_embedding_dim,
             "numerical_hidden_dim": self.numerical_hidden_dim,
         }
 

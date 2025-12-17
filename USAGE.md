@@ -150,3 +150,10 @@ python -m tweet_classifier.evaluate \
     --model-dir models/finbert-tweet-classifier/final \
     --data-path output/15-dec-enrich7.csv \
     --output-dir models/finbert-tweet-classifier/evaluation
+
+
+cd /Users/mzus/dev/TimeWaste && source .venv/bin/activate && echo "Training full model with ALL features (Phase 1+2, 5 epochs)..." && python -m tweet_classifier.train \
+    --data-path output/test2.csv \
+    --output-dir models/full-phase1-2 \
+    --epochs 5 \
+    --batch-size 16 2>&1 | tee /tmp/phase1_2_full_training.log | tail -100

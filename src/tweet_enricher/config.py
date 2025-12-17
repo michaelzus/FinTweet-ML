@@ -57,3 +57,12 @@ DEFAULT_CLIENT_ID = 1
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_BATCH_DELAY = 2.0
 
+# Market regime classification thresholds
+REGIME_TRENDING_THRESHOLD = 0.05  # ±5%
+REGIME_VOLATILE_THRESHOLD = 0.20  # 20% volatility
+REGIME_LOOKBACK_RETURN = 20  # days
+REGIME_LOOKBACK_VOL = 7  # days
+
+# Stock metadata cache
+METADATA_CACHE_FILE = Path("data/stock_metadata.json")
+

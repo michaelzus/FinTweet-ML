@@ -21,15 +21,33 @@ NUM_CLASSES = 3
 # Feature Configuration
 # ============================================================
 # Numerical features (safe - computed BEFORE tweet timestamp)
+# BASELINE (4 features):
+#   - volatility_7d, relative_volume, rsi_14, distance_from_ma_20
+# PHASE 2 EXTENDED (6 additional features):
+#   - return_5d, return_20d: Multi-period momentum
+#   - above_ma_20, slope_ma_20: Trend confirmation
+#   - gap_open, intraday_range: Shock/gap indicators
 NUMERICAL_FEATURES = [
+    # Core indicators (baseline)
     "volatility_7d",
     "relative_volume",
     "rsi_14",
     "distance_from_ma_20",
+    # Phase 2: Multi-period momentum
+    "return_5d",
+    "return_20d",
+    # Phase 2: Trend confirmation
+    "above_ma_20",
+    "slope_ma_20",
+    # Phase 2: Shock/Gap features
+    "gap_open",
+    "intraday_range",
 ]
 
 # Categorical features (will be embedded)
-CATEGORICAL_FEATURES = ["author", "category"]
+# BASELINE: author, category
+# PHASE 1: market_regime, sector, market_cap_bucket (market context)
+CATEGORICAL_FEATURES = ["author", "category", "market_regime", "sector", "market_cap_bucket"]
 
 # Columns explicitly EXCLUDED from features (future-looking / targets / reference)
 EXCLUDED_FROM_FEATURES = [
@@ -63,6 +81,10 @@ MAX_TEXT_LENGTH = 128
 # Embedding dimensions
 AUTHOR_EMBEDDING_DIM = 16
 CATEGORY_EMBEDDING_DIM = 8
+# Phase 1: Context embeddings
+MARKET_REGIME_EMBEDDING_DIM = 4  # 4 regimes: trending_up/down, volatile, calm
+SECTOR_EMBEDDING_DIM = 8  # 11 sectors
+MARKET_CAP_EMBEDDING_DIM = 4  # 4 buckets: mega/large/mid/small
 NUMERICAL_HIDDEN_DIM = 32
 
 # ============================================================

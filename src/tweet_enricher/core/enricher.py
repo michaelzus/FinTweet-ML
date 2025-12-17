@@ -10,6 +10,8 @@ import pandas as pd
 from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache import DataCache
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
+from tweet_enricher.data.stock_metadata import StockMetadataCache
+from tweet_enricher.market.regime import get_market_regime
 from tweet_enricher.market.session import (
     MarketSession,
     get_market_session,
@@ -30,6 +32,7 @@ class TweetEnricher:
         ib_fetcher: IBHistoricalDataFetcher,
         cache: DataCache,
         indicators: TechnicalIndicators,
+        metadata_cache: Optional[StockMetadataCache] = None,
     ):
         """
         Initialize the TweetEnricher.
@@ -38,10 +41,12 @@ class TweetEnricher:
             ib_fetcher: IBHistoricalDataFetcher instance for fetching data
             cache: DataCache instance for caching data
             indicators: TechnicalIndicators instance for calculating indicators
+            metadata_cache: StockMetadataCache instance for stock metadata (optional)
         """
         self.ib_fetcher = ib_fetcher
         self.cache = cache
         self.indicators = indicators
+        self.metadata_cache = metadata_cache or StockMetadataCache()
         self.logger = logging.getLogger(__name__)
 
     async def connect(self) -> bool:
@@ -253,13 +258,22 @@ class TweetEnricher:
             "ticker": None,
             "timestamp": None,
             "session": None,
+            "market_regime": None,
+            "sector": None,
+            "market_cap_bucket": None,
             "price_at_tweet": None,
             "price_at_tweet_flag": "no_data",
             "return_1d": None,
+            "return_5d": None,
+            "return_20d": None,
             "volatility_7d": None,
             "relative_volume": None,
             "rsi_14": None,
             "distance_from_ma_20": None,
+            "above_ma_20": None,
+            "slope_ma_20": None,
+            "gap_open": None,
+            "intraday_range": None,
             "spy_return_1d": None,
             "spy_return_1hr": None,
             "price_1hr_after": None,
@@ -310,7 +324,7 @@ class TweetEnricher:
 
         # CRITICAL: Slice to only include data UP TO tweet date (no look-ahead for features!)
         tweet_date = timestamp.date()
-        daily_df = daily_df_full[daily_df_full.index.date <= tweet_date].copy()
+        daily_df = daily_df_full[daily_df_full.index.date < tweet_date].copy()
 
         if daily_df.empty:
             self.logger.warning(f"No daily data before/on {tweet_date} for {ticker}")
@@ -354,10 +368,11 @@ class TweetEnricher:
         spy_df_full = self.cache.get_daily("SPY")
         spy_return_1d = None
         spy_df = None
+        market_regime = None
 
         if spy_df_full is not None and not spy_df_full.empty:
-            # CRITICAL: Slice SPY data to only include data UP TO tweet date
-            spy_df = spy_df_full[spy_df_full.index.date <= tweet_date].copy()
+            # CRITICAL: Slice SPY data to only include data BEFORE tweet date (strict)
+            spy_df = spy_df_full[spy_df_full.index.date < tweet_date].copy()
 
             if not spy_df.empty:
                 spy_dates = spy_df.index.date
@@ -368,6 +383,10 @@ class TweetEnricher:
                     self.logger.debug(f"SPY: Found {len(spy_df)} bars, using index {spy_idx} (date: {spy_dates[spy_idx]})")
                     spy_return_1d = self.indicators.calculate_return(spy_df, spy_idx, periods=1)
                     self.logger.debug(f"SPY return_1d: {spy_return_1d}")
+
+                    # Calculate market regime
+                    market_regime = get_market_regime(spy_df, timestamp)
+                    self.logger.debug(f"Market regime: {market_regime}")
                 else:
                     self.logger.warning(f"No SPY data found for date <= {tweet_date}")
             else:
@@ -444,18 +463,30 @@ class TweetEnricher:
         label_1d_5class = self._classify_return(return_to_next_open)
         label_1d_3class = self._classify_return_3class(return_to_next_open)
 
+        # Get stock metadata (sector, market cap)
+        stock_metadata = self.metadata_cache.get_metadata(ticker)
+
         # Build result dictionary
         result = {
             "ticker": ticker,
             "timestamp": timestamp,
             "session": session.value if session else None,
+            "market_regime": market_regime,
+            "sector": stock_metadata.get("sector"),
+            "market_cap_bucket": stock_metadata.get("market_cap_bucket"),
             "price_at_tweet": price_at_tweet,
             "price_at_tweet_flag": price_flag,
             "return_1d": indicators["return_1d"],
+            "return_5d": indicators["return_5d"],
+            "return_20d": indicators["return_20d"],
             "volatility_7d": indicators["volatility_7d"],
             "relative_volume": indicators["relative_volume"],
             "rsi_14": indicators["rsi_14"],
             "distance_from_ma_20": indicators["distance_from_ma_20"],
+            "above_ma_20": indicators["above_ma_20"],
+            "slope_ma_20": indicators["slope_ma_20"],
+            "gap_open": indicators["gap_open"],
+            "intraday_range": indicators["intraday_range"],
             "spy_return_1d": spy_return_1d,
             "spy_return_1hr": spy_return_1hr,
             "price_1hr_after": price_1hr_after,
@@ -518,6 +549,9 @@ class TweetEnricher:
             "author",
             "category",
             "session",
+            "market_regime",
+            "sector",
+            "market_cap_bucket",
             "price_at_tweet",
             "price_at_tweet_flag",
             "price_1hr_after",
@@ -534,10 +568,16 @@ class TweetEnricher:
             "is_reliable_label",        # NEW: data quality flag
             "tweet_hash",               # NEW: for duplicate detection
             "return_1d",
+            "return_5d",                # NEW: 5-day momentum
+            "return_20d",               # NEW: 20-day momentum
             "volatility_7d",
             "relative_volume",
             "rsi_14",
             "distance_from_ma_20",
+            "above_ma_20",              # NEW: binary trend indicator
+            "slope_ma_20",              # NEW: MA trend direction
+            "gap_open",                 # NEW: overnight gap
+            "intraday_range",           # NEW: intraday volatility
             "spy_return_1d",
             "spy_return_1hr",
             "tweet_url",

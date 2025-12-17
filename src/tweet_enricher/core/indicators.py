@@ -156,6 +156,105 @@ class TechnicalIndicators:
 
         return (current_close - current_ma) / current_ma
 
+    def calculate_above_ma(self, df: pd.DataFrame, current_idx: int, period: int = 20) -> Optional[int]:
+        """
+        Check if price is above moving average (binary feature).
+
+        Args:
+            df: DataFrame with OHLCV data
+            current_idx: Current index position
+            period: MA period (default: 20)
+
+        Returns:
+            1 if above MA, 0 if below/at, None if not enough data
+        """
+        if current_idx < period - 1:
+            return None
+
+        subset = df.iloc[: current_idx + 1].copy()
+        ma = ta.sma(subset["close"], length=period)
+
+        if ma is None or ma.empty or pd.isna(ma.iloc[-1]):
+            return None
+
+        current_close = df.iloc[current_idx]["close"]
+        return 1 if current_close > ma.iloc[-1] else 0
+
+    def calculate_ma_slope(self, df: pd.DataFrame, current_idx: int, period: int = 20, lookback: int = 5) -> Optional[float]:
+        """
+        Calculate slope of moving average (trend direction).
+
+        Args:
+            df: DataFrame with OHLCV data
+            current_idx: Current index position
+            period: MA period (default: 20)
+            lookback: How many periods to measure slope over (default: 5)
+
+        Returns:
+            MA slope as percentage change or None if not enough data
+        """
+        if current_idx < period + lookback - 1:
+            return None
+
+        subset = df.iloc[: current_idx + 1].copy()
+        ma = ta.sma(subset["close"], length=period)
+
+        if ma is None or len(ma) < lookback + 1:
+            return None
+
+        ma_current = ma.iloc[-1]
+        ma_past = ma.iloc[-1 - lookback]
+
+        if pd.isna(ma_current) or pd.isna(ma_past) or ma_past == 0:
+            return None
+
+        return (ma_current - ma_past) / ma_past
+
+    def calculate_gap_open(self, df: pd.DataFrame, current_idx: int) -> Optional[float]:
+        """
+        Calculate overnight gap (open vs previous close).
+
+        Args:
+            df: DataFrame with OHLCV data (must have 'open' and 'close')
+            current_idx: Current index position
+
+        Returns:
+            Gap as percentage or None if not enough data
+        """
+        if current_idx < 1 or current_idx >= len(df):
+            return None
+
+        open_today = df.iloc[current_idx]["open"]
+        close_yesterday = df.iloc[current_idx - 1]["close"]
+
+        if close_yesterday == 0:
+            return None
+
+        return (open_today - close_yesterday) / close_yesterday
+
+    def calculate_intraday_range(self, df: pd.DataFrame, current_idx: int) -> Optional[float]:
+        """
+        Calculate intraday volatility (high-low range).
+
+        Args:
+            df: DataFrame with OHLCV data (must have 'high', 'low', 'close')
+            current_idx: Current index position
+
+        Returns:
+            Intraday range as percentage of previous close or None
+        """
+        if current_idx < 1 or current_idx >= len(df):
+            return None
+
+        high_today = df.iloc[current_idx]["high"]
+        low_today = df.iloc[current_idx]["low"]
+        close_yesterday = df.iloc[current_idx - 1]["close"]
+
+        if close_yesterday == 0:
+            return None
+
+        return (high_today - low_today) / close_yesterday
+
     def calculate_all_indicators(self, df: pd.DataFrame, current_idx: int) -> dict:
         """
         Calculate all technical indicators at once.
@@ -168,11 +267,21 @@ class TechnicalIndicators:
             Dictionary with all calculated indicators
         """
         indicators = {
+            # Original core indicators
             "return_1d": self.calculate_return(df, current_idx, periods=1),
             "volatility_7d": self.calculate_volatility(df, current_idx, window=7),
             "relative_volume": self.calculate_relative_volume(df, current_idx),
             "rsi_14": self.calculate_rsi(df, current_idx),
             "distance_from_ma_20": self.calculate_distance_from_ma(df, current_idx),
+            # NEW: Multi-period momentum
+            "return_5d": self.calculate_return(df, current_idx, periods=5),
+            "return_20d": self.calculate_return(df, current_idx, periods=20),
+            # NEW: Trend confirmation
+            "above_ma_20": self.calculate_above_ma(df, current_idx, period=20),
+            "slope_ma_20": self.calculate_ma_slope(df, current_idx, period=20, lookback=5),
+            # NEW: Shock/Gap features
+            "gap_open": self.calculate_gap_open(df, current_idx),
+            "intraday_range": self.calculate_intraday_range(df, current_idx),
         }
 
         return indicators

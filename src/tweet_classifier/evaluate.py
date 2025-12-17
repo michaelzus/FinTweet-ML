@@ -88,9 +88,18 @@ def load_model_for_evaluation(
         num_numerical_features=model_config["num_numerical_features"],
         num_authors=model_config["num_authors"],
         num_categories=model_config["num_categories"],
+        num_market_regimes=model_config.get("num_market_regimes", 5),
+        num_sectors=model_config.get("num_sectors", 12),
+        num_market_caps=model_config.get("num_market_caps", 5),
         num_classes=model_config.get("num_classes", 3),
         freeze_bert=model_config.get("freeze_bert", False),
         dropout=model_config.get("dropout", 0.3),
+        author_embedding_dim=model_config.get("author_embedding_dim", 16),
+        category_embedding_dim=model_config.get("category_embedding_dim", 8),
+        market_regime_embedding_dim=model_config.get("market_regime_embedding_dim", 4),
+        sector_embedding_dim=model_config.get("sector_embedding_dim", 8),
+        market_cap_embedding_dim=model_config.get("market_cap_embedding_dim", 4),
+        numerical_hidden_dim=model_config.get("numerical_hidden_dim", 32),
     )
 
     # Load weights
@@ -105,7 +114,13 @@ def load_model_for_evaluation(
         else:
             raise FileNotFoundError(f"Model weights not found in {model_dir}")
 
-    state_dict = torch.load(weights_path, map_location=device)
+    # Load state dict based on file format
+    if weights_path.suffix == ".safetensors":
+        from safetensors.torch import load_file
+        state_dict = load_file(weights_path, device=str(device))
+    else:
+        # Use weights_only=True for security - only load tensors, not arbitrary Python objects
+        state_dict = torch.load(weights_path, map_location=device, weights_only=True)
     model.load_state_dict(state_dict, strict=False)
     model.to(device)
     model.eval()
@@ -153,6 +168,9 @@ def evaluate_on_test(
             numerical = batch["numerical"].to(device)
             author_idx = batch["author_idx"].to(device)
             category_idx = batch["category_idx"].to(device)
+            market_regime_idx = batch["market_regime_idx"].to(device)
+            sector_idx = batch["sector_idx"].to(device)
+            market_cap_idx = batch["market_cap_idx"].to(device)
             labels = batch["labels"]
 
             outputs = model(
@@ -161,6 +179,9 @@ def evaluate_on_test(
                 numerical=numerical,
                 author_idx=author_idx,
                 category_idx=category_idx,
+                market_regime_idx=market_regime_idx,
+                sector_idx=sector_idx,
+                market_cap_idx=market_cap_idx,
             )
 
             logits = outputs["logits"]
@@ -598,6 +619,9 @@ def evaluate(
         tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
+        encodings["market_regime_to_idx"],
+        encodings["sector_to_idx"],
+        encodings["market_cap_to_idx"],
         scaler=scaler,
         fit_scaler=False,
     )

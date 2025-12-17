@@ -24,6 +24,7 @@ from tweet_enricher.core.enricher import TweetEnricher
 from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache import DataCache
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
+from tweet_enricher.data.stock_metadata import StockMetadataCache
 from tweet_enricher.data.tickers import (
     fetch_russell1000_tickers,
     fetch_sp500_tickers,
@@ -242,13 +243,14 @@ async def _enrich_data(args: argparse.Namespace) -> int:
     ib_fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
     cache = DataCache(ib_fetcher)
     indicators = TechnicalIndicators()
-    enricher = TweetEnricher(ib_fetcher, cache, indicators)
+    metadata_cache = StockMetadataCache()
+    enricher = TweetEnricher(ib_fetcher, cache, indicators, metadata_cache)
 
-    # Connect to IB
+    # Connect to IB (if connection fails, try to continue with cached data only)
     connected = await enricher.connect()
     if not connected:
-        logger.error("Failed to connect to IB")
-        return 1
+        logger.warning("Failed to connect to IB - will attempt to use cached data only")
+        logger.warning("If enrichment fails, please start TWS/Gateway and try again")
 
     try:
         # Pre-fetch all ticker data

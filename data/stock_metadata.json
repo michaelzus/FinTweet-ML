@@ -1,0 +1,1698 @@
+{
+  "AAPL": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "MSFT": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "JPM": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "AMZN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "NVDA": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "DHR": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "GM": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "GE": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "MMM": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "HAL": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "RTX": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "KO": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "PM": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "PCAR": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NFLX": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "TXN": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "OMC": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "COF": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MAT": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "EQT": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "META": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "AVGO": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "MRVL": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "SPOT": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "TEM": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "CNP": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "NET": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "VKTX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ABNB": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "HOLX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMD": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "ORCL": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "GOOGL": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "WBD": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "WMT": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "CMCSA": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "SN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "KVUE": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "ILMN": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "COIN": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "LLY": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "TMO": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "GOOG": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "DIS": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "ROKU": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "AFRM": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "W": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MP": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "WFC": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "AXP": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "CGNX": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CVS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "EXC": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "DKNG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "TSLA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "VRT": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "GEV": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "BSX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "T": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "APH": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "LRCX": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "KMI": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "LVS": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CCI": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "IBM": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "QS": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "NLY": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "ORLY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "UBER": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "UAA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "small_cap"
+  },
+  "EA": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "HOOD": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MTCH": {
+    "sector": "Communications",
+    "market_cap_bucket": "mid_cap"
+  },
+  "LUV": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CVNA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "F": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "UNH": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "LULU": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CRM": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "MRNA": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "CNC": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "MCD": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "RIVN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "HON": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "DOW": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "PCG": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "TSCO": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "TRU": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "VLO": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "FTI": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "AAL": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "TMUS": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "FCX": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "INTC": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "NEM": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "DECK": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "WU": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "BKR": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "ALK": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ENPH": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "MU": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "PLTR": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "SMCI": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "BA": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "DASH": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "NKE": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CRWD": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "KDP": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "TGT": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMAT": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "BAH": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "GNTX": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CART": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "PG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "RDDT": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "BAM": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MDLZ": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "SNOW": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "PANW": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "LITE": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "FLEX": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "JCI": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CIEN": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "HWM": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "PSTG": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "TTD": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "MO": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CAT": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "HPQ": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "NEE": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "UNP": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SOFI": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "PYPL": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "UPS": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "GLW": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "V": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "STX": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "VZ": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "ETSY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "SBUX": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CMG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MA": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "RBLX": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "EL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "FSLR": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "TWLO": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "TEAM": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "CVX": {
+    "sector": "Energy",
+    "market_cap_bucket": "mega_cap"
+  },
+  "XOM": {
+    "sector": "Energy",
+    "market_cap_bucket": "mega_cap"
+  },
+  "KHC": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MRK": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "JNJ": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "SNDK": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ASTS": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "AU": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "WDC": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "RKLB": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CELH": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "PEP": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "RCL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "DHI": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "QCOM": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "CL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMKR": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CFLT": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "BMRN": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "WELL": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "NXPI": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "FTAI": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NUE": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "BRO": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NOV": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "HBAN": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "C": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "BAC": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "M": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "COHR": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "PSKY": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "OLN": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "KD": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DELL": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "XYZ": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "IONS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "VFC": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CARR": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "IVZ": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMT": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "SYY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CSGP": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "CZR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RRC": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FLS": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "TER": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ON": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "CRCL": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "QXO": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CSCO": {
+    "sector": "Technology",
+    "market_cap_bucket": "mega_cap"
+  },
+  "ADBE": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "DJT": {
+    "sector": "Communications",
+    "market_cap_bucket": "mid_cap"
+  },
+  "GFS": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "DXCM": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "FLUT": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "LCID": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "MS": {
+    "sector": "Financials",
+    "market_cap_bucket": "mega_cap"
+  },
+  "AUR": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "SRE": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "PFE": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "GEHC": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "PSX": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "CTSH": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "EBAY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "VTR": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "MGM": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "SWKS": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "OTIS": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "FOUR": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FTV": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "AEP": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "EXE": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "ANET": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "DAY": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "FMC": {
+    "sector": "Materials",
+    "market_cap_bucket": "small_cap"
+  },
+  "CMS": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "QSR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CAH": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "SIRI": {
+    "sector": "Communications",
+    "market_cap_bucket": "mid_cap"
+  },
+  "IP": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "BLDR": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "LNG": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "APG": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MSTR": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "GILD": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "Z": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "XEL": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "SOLS": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "BMY": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "KMB": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CLF": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "APTV": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "BAX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "SRPT": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "IOT": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "DOCU": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "KR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "RKT": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "FND": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "IR": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "LYB": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CG": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "D": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "ABBV": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mega_cap"
+  },
+  "U": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "NI": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "DLTR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "GIS": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "CAVA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "TAP": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "WY": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMH": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "HRL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "STZ": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MMC": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "PAYX": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "BIRK": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ALLY": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CPNG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "TOST": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "PINS": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "APP": {
+    "sector": "Communications",
+    "market_cap_bucket": "mega_cap"
+  },
+  "LYFT": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DDOG": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ALAB": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMGN": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "FANG": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "CTRA": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "DVN": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "COP": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "VST": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "WEN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "small_cap"
+  },
+  "ELF": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "UA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "small_cap"
+  },
+  "CEG": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "BROS": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "LSCC": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "O": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "EXAS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "GTM": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "WMB": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "CIVI": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ETN": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "WYNN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MDB": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "APO": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NU": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SWK": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MPC": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "GPN": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "ADM": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "ZTS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "EXEL": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "AIG": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MOS": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "EQH": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NCLH": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "UAL": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CLVT": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "HOG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "LYV": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "CTVA": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "TREX": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DT": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "EMR": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "ZBH": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "FTNT": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ALB": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "MET": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CF": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "PATH": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RPRX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "DD": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "ROST": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "COTY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "INSM": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "TPR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "NRG": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "AKAM": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "MNST": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "DOCS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "MCHP": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "BDX": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "USFD": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "PENN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "VTRS": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "COLD": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "KMX": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DBX": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "EOG": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "CE": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "NVT": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CNH": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "KKR": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "DUK": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "ONON": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "PRMB": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "OWL": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "JHX": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "TSN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "HPE": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "OXY": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "OGN": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "small_cap"
+  },
+  "DAL": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "FYBR": {
+    "sector": "Communications",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RBRK": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "TJX": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "ELAN": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "BBWI": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "BILL": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "MKC": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "BX": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "TTEK": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "APA": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "EW": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "SCHW": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "IBKR": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SLB": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "FNB": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ACN": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "GAP": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "HD": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mega_cap"
+  },
+  "FISV": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "GME": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "LEN": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "AS": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "MDT": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "LOW": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "BJ": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "ARMK": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "XP": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RVMD": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "GTLB": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "AXTA": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "VVV": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "VIK": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "INVH": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "CPRT": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "ADI": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ZM": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "NTNX": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "ACI": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FITB": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "S": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "AMTM": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "PLD": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "CPB": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "JEF": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "OKTA": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "DG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "SGI": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "NWL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "small_cap"
+  },
+  "HUN": {
+    "sector": "Materials",
+    "market_cap_bucket": "small_cap"
+  },
+  "ACHC": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "small_cap"
+  },
+  "NCNO": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CFG": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "BK": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SW": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "AGNC": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "CRH": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "BWA": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "PRGO": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "small_cap"
+  },
+  "CHWY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "AR": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "MAS": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "AM": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "SAIL": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "CNM": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "ICE": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SLM": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "KEY": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "CSX": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "USB": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "TFC": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "AES": {
+    "sector": "Utilities",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CCL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "LW": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  }
+}

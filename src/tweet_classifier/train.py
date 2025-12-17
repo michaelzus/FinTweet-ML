@@ -82,6 +82,9 @@ def create_training_args(
     # Only enable fp16 if CUDA is available
     use_fp16 = fp16 and torch.cuda.is_available()
 
+    # Disable pin_memory for MPS (Apple Silicon) - not supported
+    use_pin_memory = not torch.backends.mps.is_available()
+
     return TrainingArguments(
         output_dir=str(output_dir),
         eval_strategy="epoch",
@@ -100,6 +103,7 @@ def create_training_args(
         save_total_limit=save_total_limit,
         report_to="none",  # Disable wandb/tensorboard by default
         remove_unused_columns=False,  # Keep all columns in dataset
+        dataloader_pin_memory=use_pin_memory,  # Disable for MPS
     )
 
 
@@ -171,6 +175,9 @@ def train(
         tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
+        encodings["market_regime_to_idx"],  # Phase 1
+        encodings["sector_to_idx"],  # Phase 1
+        encodings["market_cap_to_idx"],  # Phase 1
         fit_scaler=True,
     )
     logger.info(f"Training dataset: {len(train_dataset)} samples")
@@ -181,6 +188,9 @@ def train(
         tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
+        encodings["market_regime_to_idx"],  # Phase 1
+        encodings["sector_to_idx"],  # Phase 1
+        encodings["market_cap_to_idx"],  # Phase 1
         scaler=scaler,
         fit_scaler=False,
     )
@@ -201,6 +211,9 @@ def train(
         num_numerical_features=len(NUMERICAL_FEATURES),
         num_authors=encodings["num_authors"],
         num_categories=encodings["num_categories"],
+        num_market_regimes=encodings["num_market_regimes"],  # Phase 1
+        num_sectors=encodings["num_sectors"],  # Phase 1
+        num_market_caps=encodings["num_market_caps"],  # Phase 1
         freeze_bert=freeze_bert,
         dropout=dropout,
     )
@@ -270,6 +283,9 @@ def train(
             tokenizer,
             encodings["author_to_idx"],
             encodings["category_to_idx"],
+            encodings["market_regime_to_idx"],  # Phase 1
+            encodings["sector_to_idx"],  # Phase 1
+            encodings["market_cap_to_idx"],  # Phase 1
             scaler=scaler,
             fit_scaler=False,
         )
