@@ -7,7 +7,13 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-from tweet_enricher.config import DAILY_DATA_DIR, INTRADAY_CACHE_DIR, MARKET_CLOSE
+from tweet_enricher.config import (
+    DAILY_DATA_DIR,
+    INTRADAY_CACHE_DIR,
+    INTRADAY_FETCH_DELAY,
+    INTRADAY_TOTAL_DAYS,
+    MARKET_CLOSE,
+)
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
 from tweet_enricher.io.feather import (
     load_daily_data,
@@ -236,169 +242,96 @@ class DataCache:
         self,
         symbols: list,
         max_date: datetime,
-        duration: str = "60 D",
-        batch_size: int = 3,
+        total_days: int = INTRADAY_TOTAL_DAYS,
+        delay_between_symbols: float = INTRADAY_FETCH_DELAY,
     ) -> None:
         """
-        Pre-fetch intraday data for all symbols using disk cache with parallel batch fetching.
+        Pre-fetch intraday data for all symbols.
 
-        This method implements a smart caching strategy with parallel fetching:
-        1. Phase 1: Check all caches and categorize symbols
-        2. Phase 2: Batch fetch symbols needing full data in parallel
-        3. Phase 3: Batch fetch symbols needing incremental updates in parallel
+        Fetches 200 days of 15-min bars in a single request per symbol.
+        IB supports this without chunking.
+
+        Strategy:
+        1. Phase 1: Check caches and categorize symbols (fresh vs needs fetch)
+        2. Phase 2: Fetch full data for symbols without fresh cache
 
         Args:
             symbols: List of ticker symbols to fetch
             max_date: Maximum date for data range
-            duration: Full duration string (default: 60 D) - used for initial fetch
-            batch_size: Number of symbols to fetch per batch (default: 3)
+            total_days: Days of history to fetch (default: 200)
+            delay_between_symbols: Seconds between requests (default: 2.0)
         """
         loaded_from_cache = 0
         fetched_full = 0
-        updated_incremental = 0
         failed = 0
 
         # Normalize max_date to ET
         max_date_normalized = normalize_timestamp(max_date)
         target_date = max_date_normalized.date() if hasattr(max_date_normalized, "date") else max_date_normalized
 
-        # ========== PHASE 1: Check all caches and categorize ==========
+        # ========== PHASE 1: Check caches ==========
         self.logger.info("  Phase 1: Checking caches...")
 
-        cached_fresh: list = []  # Symbols with up-to-date cache
-        needs_full_fetch: list = []  # Symbols needing full fetch (no cache or too old)
-        needs_incremental: list = []  # Symbols needing incremental update
-        incremental_info: Dict[str, Tuple[pd.DataFrame, int]] = {}  # symbol -> (cached_df, days_missing)
+        cached_fresh: list = []
+        needs_fetch: list = []
 
         for symbol in symbols:
             cached_df = load_intraday_data(symbol, self.intraday_dir)
 
             if cached_df is None:
-                needs_full_fetch.append(symbol)
+                needs_fetch.append(symbol)
+                continue
+
+            cached_max_date = cached_df.index.max()
+            cached_date = cached_max_date.date() if hasattr(cached_max_date, "date") else cached_max_date
+
+            # Check if cache is fresh (has data up to target date)
+            is_fresh = False
+            if cached_date > target_date:
+                is_fresh = True
+            elif cached_date == target_date:
+                cached_time_minutes = cached_max_date.hour * 60 + cached_max_date.minute
+                if cached_time_minutes >= MARKET_CLOSE:
+                    is_fresh = True
+
+            if is_fresh:
+                cached_fresh.append(symbol)
+                self.intraday_data_cache[symbol] = cached_df
+                loaded_from_cache += 1
             else:
-                cached_max_date = cached_df.index.max()
-                cached_date = cached_max_date.date() if hasattr(cached_max_date, "date") else cached_max_date
+                needs_fetch.append(symbol)
 
-                # For intraday data, check if we have data up to end of trading on target date
-                is_cache_fresh = False
-                if cached_date > target_date:
-                    is_cache_fresh = True
-                elif cached_date == target_date:
-                    # Check if we have data past market close (afterhours data)
-                    cached_time_minutes = cached_max_date.hour * 60 + cached_max_date.minute
-                    if cached_time_minutes >= MARKET_CLOSE:  # Has data at or after 4:00 PM
-                        is_cache_fresh = True
+        self.logger.info(f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_fetch)} need fetch")
 
-                if is_cache_fresh:
-                    # Cache is fresh
-                    cached_fresh.append(symbol)
-                    self.intraday_data_cache[symbol] = cached_df
-                    loaded_from_cache += 1
-                else:
-                    days_missing = (target_date - cached_date).days
-                    if days_missing > 60:
-                        # Cache too old, treat as full fetch
-                        needs_full_fetch.append(symbol)
-                    else:
-                        # Needs incremental update
-                        needs_incremental.append(symbol)
-                        incremental_info[symbol] = (cached_df, days_missing)
+        # ========== PHASE 2: Fetch full data ==========
+        if needs_fetch:
+            self.logger.info(f"  Phase 2: Fetching {len(needs_fetch)} symbols ({total_days} days each)...")
 
-        self.logger.info(
-            f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_full_fetch)} full fetch, {len(needs_incremental)} incremental"
-        )
-
-        # ========== PHASE 2: Batch fetch symbols needing full data ==========
-        if needs_full_fetch:
-            self.logger.info(f"  Phase 2: Fetching {len(needs_full_fetch)} symbols (full data, {duration})...")
-
-            # Callback to save immediately after each batch (preserves progress on interrupt)
-            def save_full_batch(batch_data: Dict[str, pd.DataFrame]) -> None:
+            def save_symbol(symbol: str, df: pd.DataFrame) -> None:
                 nonlocal fetched_full
-                for symbol, df in batch_data.items():
-                    normalized_df = normalize_dataframe_timezone(df)
-                    save_intraday_data(symbol, normalized_df, self.intraday_dir)
-                    self.intraday_data_cache[symbol] = normalized_df
-                    fetched_full += 1
+                normalized_df = normalize_dataframe_timezone(df)
+                save_intraday_data(symbol, normalized_df, self.intraday_dir)
+                self.intraday_data_cache[symbol] = normalized_df
+                fetched_full += 1
 
-            await self.ib_fetcher.fetch_multiple_stocks(
-                symbols=needs_full_fetch,
+            await self.ib_fetcher.fetch_multiple_stocks_intraday(
+                symbols=needs_fetch,
+                total_days=total_days,
                 bar_size="15 mins",
-                duration=duration,
-                use_rth=False,  # Include extended hours
-                batch_size=batch_size,
-                delay_between_batches=5.0,  # Longer delay for large intraday data
-                on_batch_complete=save_full_batch,
+                use_rth=False,
+                delay_between_symbols=delay_between_symbols,
+                on_symbol_complete=save_symbol,
             )
 
-            # Count failures (symbols that weren't saved by callback)
-            failed = len(needs_full_fetch) - fetched_full
-
+            failed = len(needs_fetch) - fetched_full
             self.logger.info(f"  Phase 2 complete: {fetched_full} fetched, {failed} failed")
-
-        # ========== PHASE 3: Batch fetch incremental updates ==========
-        if needs_incremental:
-            self.logger.info(f"  Phase 3: Fetching {len(needs_incremental)} incremental updates...")
-
-            # For incremental, we fetch with a common duration that covers all
-            max_days_missing = max(info[1] for info in incremental_info.values())
-            incremental_duration = f"{max_days_missing + 5} D"  # +5 days safety buffer
-
-            # Callback to merge and save immediately after each batch (preserves progress on interrupt)
-            def save_incremental_batch(batch_data: Dict[str, pd.DataFrame]) -> None:
-                nonlocal updated_incremental, loaded_from_cache
-                for symbol, df in batch_data.items():
-                    if symbol not in incremental_info:
-                        continue
-                    cached_df, _ = incremental_info[symbol]
-                    # Normalize cached_df to ensure timezone-aware index for comparison
-                    cached_df = normalize_dataframe_timezone(cached_df)
-                    cached_max_date = cached_df.index.max()
-
-                    normalized_df = normalize_dataframe_timezone(df)
-
-                    # Merge with cached data (keep only new rows)
-                    new_rows = normalized_df[normalized_df.index > cached_max_date]
-
-                    if not new_rows.empty:
-                        merged_df = pd.concat([cached_df, new_rows])
-                        merged_df = merged_df.sort_index()
-                        merged_df = merged_df[~merged_df.index.duplicated(keep="last")]
-
-                        save_intraday_data(symbol, merged_df, self.intraday_dir)
-                        self.intraday_data_cache[symbol] = merged_df
-                        updated_incremental += 1
-                    else:
-                        # No new data, use cached
-                        self.intraday_data_cache[symbol] = cached_df
-                        loaded_from_cache += 1
-
-            await self.ib_fetcher.fetch_multiple_stocks(
-                symbols=needs_incremental,
-                bar_size="15 mins",
-                duration=incremental_duration,
-                use_rth=False,  # Include extended hours
-                batch_size=batch_size,
-                delay_between_batches=5.0,  # Longer delay for large intraday data
-                on_batch_complete=save_incremental_batch,
-            )
-
-            # Handle symbols that failed to fetch (use stale cache)
-            for symbol in needs_incremental:
-                if symbol not in self.intraday_data_cache:
-                    cached_df, _ = incremental_info[symbol]
-                    self.intraday_data_cache[symbol] = cached_df
-                    loaded_from_cache += 1
-
-            self.logger.info(f"  Phase 3 complete: {updated_incremental} updated")
 
         # ========== Summary ==========
         self.logger.info("")
         self.logger.info("=" * 80)
         self.logger.info("Intraday Data Summary:")
         self.logger.info(f"   - Loaded from cache: {loaded_from_cache}")
-        self.logger.info(f"   - Fetched full: {fetched_full}")
-        self.logger.info(f"   - Updated incremental: {updated_incremental}")
+        self.logger.info(f"   - Fetched: {fetched_full}")
         self.logger.info(f"   - Failed: {failed}")
         self.logger.info(f"   - Total in memory cache: {len(self.intraday_data_cache)}")
         self.logger.info("=" * 80)

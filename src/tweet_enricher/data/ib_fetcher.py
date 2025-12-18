@@ -17,6 +17,8 @@ from tweet_enricher.config import (
     DEFAULT_CLIENT_ID,
     DEFAULT_IB_HOST,
     DEFAULT_IB_PORT,
+    INTRADAY_FETCH_DELAY,
+    INTRADAY_TOTAL_DAYS,
 )
 
 
@@ -237,3 +239,68 @@ class IBHistoricalDataFetcher:
         self.logger.info(f"Total: {len(results)}/{total} symbols fetched successfully")
         return results
 
+    async def fetch_multiple_stocks_intraday(
+        self,
+        symbols: List[str],
+        total_days: int = INTRADAY_TOTAL_DAYS,
+        bar_size: str = "15 mins",
+        exchange: str = "SMART",
+        currency: str = "USD",
+        use_rth: bool = False,
+        delay_between_symbols: float = INTRADAY_FETCH_DELAY,
+        on_symbol_complete: Optional[Callable[[str, pd.DataFrame], None]] = None,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Fetch intraday historical data for multiple stocks sequentially.
+
+        Fetches data in single 200-day requests per symbol. IB throttles parallel
+        requests, so sequential fetching is most efficient.
+
+        Args:
+            symbols: List of stock ticker symbols
+            total_days: Days of history to fetch (default: 200)
+            bar_size: Bar size (default: 15 mins)
+            exchange: Exchange (default: SMART)
+            currency: Currency (default: USD)
+            use_rth: Use regular trading hours only (default: False for extended hours)
+            delay_between_symbols: Seconds between symbol requests (default: 2.0)
+            on_symbol_complete: Callback called after each symbol with (symbol, df)
+
+        Returns:
+            Dictionary mapping symbols to their DataFrames
+        """
+        results: Dict[str, pd.DataFrame] = {}
+        total = len(symbols)
+
+        if total == 0:
+            return results
+
+        successful = 0
+        failed = 0
+
+        for i, symbol in enumerate(symbols):
+            self.logger.info(f"Symbol {i + 1}/{total}: {symbol}")
+
+            df = await self.fetch_historical_data(
+                symbol=symbol,
+                exchange=exchange,
+                currency=currency,
+                duration=f"{total_days} D",
+                bar_size=bar_size,
+                use_rth=use_rth,
+            )
+
+            if df is not None and not df.empty:
+                results[symbol] = df
+                successful += 1
+                if on_symbol_complete:
+                    on_symbol_complete(symbol, df)
+            else:
+                failed += 1
+
+            # Delay between symbols (except after the last one)
+            if i < total - 1:
+                await asyncio.sleep(delay_between_symbols)
+
+        self.logger.info(f"Total: {successful}/{total} symbols fetched successfully, {failed} failed")
+        return results

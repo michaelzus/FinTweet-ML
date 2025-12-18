@@ -54,7 +54,7 @@ input/discord/*.txt
 # Data cache directories (persistent disk cache for OHLCV data)
 data/daily/
 data/intraday/
-
+data/intraday_stop/
 # Test outputs
 *_test.csv
 *_new.csv
