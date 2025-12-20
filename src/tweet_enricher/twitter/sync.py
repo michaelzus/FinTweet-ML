@@ -182,7 +182,8 @@ class SyncService:
         days_skipped_journal = 0
         
         # Fetch day by day (oldest first for better progress display)
-        for day_offset in range(total_days - 1, -1, -1):
+        # Skip today (day_offset=0) since tweets are still being posted
+        for day_offset in range(total_days - 1, 0, -1):
             target_date = now - timedelta(days=day_offset)
             since_date = target_date.strftime("%Y-%m-%d")
             until_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
