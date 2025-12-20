@@ -1694,5 +1694,221 @@
   "LW": {
     "sector": "Consumer",
     "market_cap_bucket": "mid_cap"
+  },
+  "EIX": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "PK": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "HST": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "SMMT": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
+  },
+  "CAG": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FAST": {
+    "sector": "Industrials",
+    "market_cap_bucket": "large_cap"
+  },
+  "UWMC": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "BALL": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "BBY": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "ENTG": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "PGR": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "NWSA": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "GTES": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "AA": {
+    "sector": "Materials",
+    "market_cap_bucket": "large_cap"
+  },
+  "REXR": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "STWD": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RF": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "SO": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "CMA": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "BRKR": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ADT": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "YETI": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "GPK": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "VICI": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "NVST": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "BRBR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "OKE": {
+    "sector": "Energy",
+    "market_cap_bucket": "large_cap"
+  },
+  "ETR": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "BEN": {
+    "sector": "Financials",
+    "market_cap_bucket": "large_cap"
+  },
+  "GEN": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "AMCR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "large_cap"
+  },
+  "SARO": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "HR": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FLO": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "NIQ": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DAR": {
+    "sector": "Consumer",
+    "market_cap_bucket": "mid_cap"
+  },
+  "FIS": {
+    "sector": "Technology",
+    "market_cap_bucket": "large_cap"
+  },
+  "FE": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "FOXA": {
+    "sector": "Communications",
+    "market_cap_bucket": "large_cap"
+  },
+  "KNX": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ES": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "DV": {
+    "sector": "Communications",
+    "market_cap_bucket": "small_cap"
+  },
+  "MPW": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "WSC": {
+    "sector": "Industrials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "MTG": {
+    "sector": "Financials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "DOC": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "large_cap"
+  },
+  "PEG": {
+    "sector": "Utilities",
+    "market_cap_bucket": "large_cap"
+  },
+  "OVV": {
+    "sector": "Energy",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ALGM": {
+    "sector": "Technology",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ESI": {
+    "sector": "Materials",
+    "market_cap_bucket": "mid_cap"
+  },
+  "CERT": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "small_cap"
+  },
+  "AVTR": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "mid_cap"
+  },
+  "RITM": {
+    "sector": "Real Estate",
+    "market_cap_bucket": "mid_cap"
+  },
+  "ROIV": {
+    "sector": "Healthcare",
+    "market_cap_bucket": "large_cap"
   }
 }
