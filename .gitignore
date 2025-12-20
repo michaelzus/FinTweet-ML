@@ -59,6 +59,9 @@ data/intraday_stop/
 *_test.csv
 *_new.csv
 *_new[0-9].csv
+consistency_logs/
+consistency_test_results.csv
+evaluation/
 
 # Misc
 *.log

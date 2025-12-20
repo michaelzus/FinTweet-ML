@@ -63,10 +63,10 @@ INTRADAY_TOTAL_DAYS = 200       # Total days of intraday history to fetch
 INTRADAY_FETCH_DELAY = 2.0      # Seconds between symbol requests
 
 # Market regime classification thresholds
-REGIME_TRENDING_THRESHOLD = 0.05  # ±5%
-REGIME_VOLATILE_THRESHOLD = 0.20  # 20% volatility
-REGIME_LOOKBACK_RETURN = 20  # days
-REGIME_LOOKBACK_VOL = 7  # days
+REGIME_TRENDING_THRESHOLD = 0.02  # ±2% weekly return = trending
+REGIME_VOLATILE_THRESHOLD = 0.18  # 18% annualized volatility = volatile
+REGIME_LOOKBACK_RETURN = 5  # 5 trading days (1 week) for trend detection
+REGIME_LOOKBACK_VOL = 5  # 5 trading days for volatility calculation
 
 # Stock metadata cache
 METADATA_CACHE_FILE = Path("data/stock_metadata.json")

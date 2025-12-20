@@ -6,6 +6,7 @@ Provides subcommands for all tweet enrichment operations.
 import argparse
 import asyncio
 import logging
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timedelta
@@ -46,6 +47,31 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+
+def normalize_duration(duration: str) -> str:
+    """
+    Normalize IB duration string to required format: integer{SPACE}unit.
+
+    IB API requires duration format like "1 Y", "6 M", "30 D".
+    This handles user input without space like "1Y" -> "1 Y".
+
+    Args:
+        duration: Duration string (e.g., "1Y", "1 Y", "6M", "30D")
+
+    Returns:
+        Normalized duration string with space between number and unit
+    """
+    duration = duration.strip()
+    # If already has space in correct format, return as-is
+    if re.match(r"^\d+\s+[SDWMY]$", duration, re.IGNORECASE):
+        return duration.upper()
+    # Handle no-space format like "1Y" or "30D"
+    match = re.match(r"^(\d+)([SDWMY])$", duration, re.IGNORECASE)
+    if match:
+        return f"{match.group(1)} {match.group(2).upper()}"
+    # Return original if format is unrecognized (let IB API report error)
+    return duration
 
 
 # ============================================================================
@@ -104,8 +130,8 @@ async def _fetch_data(args: argparse.Namespace) -> int:
             russell1000_symbols = fetch_russell1000_tickers()
             logger.info(f"Found {len(russell1000_symbols)} Russell 1000 tickers")
 
-            symbols = list(set(sp500_symbols + russell1000_symbols))
-            logger.info(f"Combined total: {len(symbols)} unique tickers")
+            symbols = list(set(sp500_symbols + russell1000_symbols + ["SPY"]))
+            logger.info(f"Combined total: {len(symbols)} unique tickers (including SPY)")
         except Exception as e:
             logger.error(f"Error: {e}")
             return 1
@@ -113,7 +139,9 @@ async def _fetch_data(args: argparse.Namespace) -> int:
         logger.info("Fetching S&P 500 ticker list...")
         try:
             symbols = fetch_sp500_tickers()
-            logger.info(f"Found {len(symbols)} S&P 500 tickers")
+            if "SPY" not in symbols:
+                symbols.append("SPY")
+            logger.info(f"Found {len(symbols)} S&P 500 tickers (including SPY)")
         except Exception as e:
             logger.error(f"Error: {e}")
             return 1
@@ -135,12 +163,13 @@ async def _fetch_data(args: argparse.Namespace) -> int:
         return 1
 
     try:
+        duration = normalize_duration(args.duration)
         logger.info(f"Fetching historical data for {len(symbols)} symbols...")
         data_dict = await fetcher.fetch_multiple_stocks(
             symbols=symbols,
             exchange=args.exchange,
             currency=args.currency,
-            duration=args.duration,
+            duration=duration,
             bar_size=args.bar_size,
             batch_size=args.batch_size,
             delay_between_batches=args.batch_delay,
@@ -294,10 +323,10 @@ async def _enrich_data(args: argparse.Namespace) -> int:
         logger.info(f"Failed: {len(output_df) - successful}")
 
         # Label distribution
-        labels = output_df["label_5class"].dropna().tolist()
+        labels = output_df["label_1d_3class"].dropna().tolist()
         if labels:
             label_counts = Counter(labels)
-            logger.info("\nLabel distribution:")
+            logger.info("\nLabel distribution (1-day 3-class):")
             for label, count in sorted(label_counts.items()):
                 logger.info(f"  {label}: {count}")
 
@@ -311,6 +340,95 @@ def cmd_enrich(args: argparse.Namespace) -> int:
     """Enrich tweets with market data."""
     setup_logging(args.verbose)
     return asyncio.run(_enrich_data(args))
+
+
+# ============================================================================
+# Subcommand: backfill-intraday
+# ============================================================================
+async def _backfill_intraday(args: argparse.Namespace) -> int:
+    """Run intraday data backfill."""
+    logger = logging.getLogger(__name__)
+
+    # Parse target start date
+    try:
+        target_start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+    except ValueError:
+        logger.error(f"Invalid date format: {args.start_date}. Use YYYY-MM-DD")
+        return 1
+
+    # Get symbols to backfill
+    symbols: list = []
+
+    if args.symbols:
+        symbols = args.symbols
+    elif args.from_file:
+        # Read symbols from a file (one per line or CSV with 'symbol' column)
+        file_path = Path(args.from_file)
+        if not file_path.exists():
+            logger.error(f"File not found: {args.from_file}")
+            return 1
+        if file_path.suffix == ".csv":
+            df = pd.read_csv(file_path)
+            if "symbol" in df.columns:
+                symbols = df["symbol"].dropna().unique().tolist()
+            elif "ticker" in df.columns:
+                symbols = df["ticker"].dropna().unique().tolist()
+            else:
+                logger.error("CSV must have 'symbol' or 'ticker' column")
+                return 1
+        else:
+            with open(file_path) as f:
+                symbols = [line.strip() for line in f if line.strip()]
+    elif args.all_cached:
+        # Get all symbols from existing intraday cache
+        from tweet_enricher.config import INTRADAY_CACHE_DIR
+        intraday_dir = Path(INTRADAY_CACHE_DIR)
+        if intraday_dir.exists():
+            symbols = [f.stem for f in intraday_dir.glob("*.feather")]
+        else:
+            logger.error(f"Intraday cache directory not found: {intraday_dir}")
+            return 1
+
+    if not symbols:
+        logger.error("No symbols specified. Use --symbols, --from-file, or --all-cached")
+        return 1
+
+    # Filter excluded tickers
+    excluded_count = sum(1 for t in symbols if t in EXCLUDED_TICKERS)
+    if excluded_count > 0:
+        logger.info(f"Excluding {excluded_count} problematic tickers")
+    symbols = [t for t in symbols if t not in EXCLUDED_TICKERS]
+
+    logger.info("=" * 80)
+    logger.info(f"BACKFILL INTRADAY DATA: {len(symbols)} symbols back to {target_start_date}")
+    logger.info("=" * 80)
+
+    # Initialize IB fetcher and cache
+    ib_fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
+    cache = DataCache(ib_fetcher)
+
+    # Connect to IB
+    connected = await ib_fetcher.connect()
+    if not connected:
+        logger.error("Failed to connect to IB. Please start TWS/Gateway.")
+        return 1
+
+    try:
+        await cache.backfill_intraday_data(
+            symbols=symbols,
+            target_start_date=target_start_date,
+            delay_between_symbols=args.delay,
+        )
+    finally:
+        await ib_fetcher.disconnect()
+
+    return 0
+
+
+def cmd_backfill_intraday(args: argparse.Namespace) -> int:
+    """Backfill historical intraday data."""
+    setup_logging(args.verbose)
+    return asyncio.run(_backfill_intraday(args))
 
 
 # ============================================================================
@@ -652,6 +770,34 @@ Examples:
     filter_parser.add_argument("--output", help="Output CSV file (optional)")
     filter_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     filter_parser.set_defaults(func=cmd_filter_volume)
+
+    # ============ backfill-intraday subcommand ============
+    backfill_parser = subparsers.add_parser(
+        "backfill-intraday",
+        help="Backfill historical intraday data (fetch data BEFORE existing cache)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Backfill all cached symbols to Dec 1, 2024
+  tweet-enricher backfill-intraday --start-date 2024-12-01 --all-cached
+
+  # Backfill specific symbols
+  tweet-enricher backfill-intraday --start-date 2024-12-01 --symbols AAPL NVDA TSLA
+
+  # Backfill symbols from a file
+  tweet-enricher backfill-intraday --start-date 2024-12-01 --from-file symbols.csv
+        """,
+    )
+    backfill_parser.add_argument("--start-date", required=True, help="Target start date (YYYY-MM-DD)")
+    backfill_parser.add_argument("--symbols", nargs="+", help="List of symbols to backfill")
+    backfill_parser.add_argument("--from-file", help="File with symbols (CSV or text, one per line)")
+    backfill_parser.add_argument("--all-cached", action="store_true", help="Backfill all symbols in existing cache")
+    backfill_parser.add_argument("--delay", type=float, default=2.0, help="Delay between symbols (default: 2.0)")
+    backfill_parser.add_argument("--host", default="127.0.0.1", help="TWS/Gateway host (default: 127.0.0.1)")
+    backfill_parser.add_argument("--port", type=int, default=7497, help="TWS/Gateway port (default: 7497)")
+    backfill_parser.add_argument("--client-id", type=int, default=1, help="Client ID (default: 1)")
+    backfill_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    backfill_parser.set_defaults(func=cmd_backfill_intraday)
 
     # ============ twitter subcommand group ============
     twitter_parser = subparsers.add_parser(

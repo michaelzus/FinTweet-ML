@@ -101,7 +101,9 @@ DEFAULT_WEIGHT_DECAY = 0.01
 # ============================================================
 # Data Split Configuration
 # ============================================================
-DEFAULT_TEST_SIZE = 0.15
-DEFAULT_VAL_SIZE = 0.15
+# Using 80/10/10 split to reduce distribution shift between train and test
+# (Changed from 70/15/15 which caused +9% SELL shift to +2.6% shift)
+DEFAULT_TEST_SIZE = 0.10
+DEFAULT_VAL_SIZE = 0.10
 RANDOM_SEED = 42
 
