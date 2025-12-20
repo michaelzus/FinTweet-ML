@@ -303,3 +303,5 @@ The 2025 dataset investigation revealed critical insights:
 | Healthcare | 4.3% |
 | Materials | 1.0% |
 
+
+
