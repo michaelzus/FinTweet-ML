@@ -5,6 +5,7 @@ volatile, calm) to provide context for tweet enrichment.
 """
 
 import logging
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -39,10 +40,10 @@ class MarketRegimeClassifier:
         Initialize the regime classifier.
 
         Args:
-            trending_threshold: Return threshold for trending regimes (default: 5%)
-            volatile_threshold: Volatility threshold for volatile regime (default: 20%)
-            lookback_return: Days to calculate return over (default: 20)
-            lookback_vol: Days to calculate volatility over (default: 7)
+            trending_threshold: Return threshold for trending regimes (default: 2%)
+            volatile_threshold: Annualized volatility threshold for volatile regime (default: 18%)
+            lookback_return: Days to calculate return over (default: 5)
+            lookback_vol: Days to calculate volatility over (default: 5)
         """
         self.trending_threshold = trending_threshold
         self.volatile_threshold = volatile_threshold
@@ -75,7 +76,7 @@ class MarketRegimeClassifier:
 
     def _calculate_volatility(self, df: pd.DataFrame, current_idx: int, window: int) -> Optional[float]:
         """
-        Calculate historical volatility (standard deviation of returns).
+        Calculate annualized historical volatility (standard deviation of returns).
 
         Args:
             df: DataFrame with OHLCV data
@@ -83,7 +84,7 @@ class MarketRegimeClassifier:
             window: Lookback window in periods
 
         Returns:
-            Historical volatility or None if not enough data
+            Annualized historical volatility or None if not enough data
         """
         # Need at least window data points: indices [current_idx - window + 1, current_idx]
         # This requires current_idx - window + 1 >= 0, i.e., current_idx >= window - 1
@@ -96,7 +97,11 @@ class MarketRegimeClassifier:
             return None
 
         returns = pd.Series(closes).pct_change().dropna()
-        return returns.std()
+        daily_vol = returns.std()
+
+        # Annualize: multiply by sqrt(252 trading days)
+        annualized_vol = daily_vol * math.sqrt(252)
+        return annualized_vol
 
     def classify(self, spy_df: pd.DataFrame, date: datetime) -> str:
         """
