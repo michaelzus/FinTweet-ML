@@ -2,12 +2,11 @@
 
 import logging
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-import pytz
-
 from tweet_enricher.config import TWITTER_ACCOUNTS, TWITTER_RATE_LIMIT_DELAY
+from tweet_enricher.utils.timezone import ET
 from tweet_enricher.parsers.discord import MessageCategorizer, MessageProcessor
 from tweet_enricher.text.cleaner import clean_for_finbert
 from tweet_enricher.twitter.client import Tweet, TwitterClient
@@ -57,17 +56,19 @@ class SyncService:
             twitter_ts: Twitter timestamp format "Wed Dec 17 15:01:11 +0000 2025"
 
         Returns:
-            Eastern time string "2025-12-17 10:01:11"
+            Eastern time string with timezone offset "2025-12-17 10:01:11-0500"
+            The offset is included for clarity and backward-compatible parsing.
         """
         try:
             # Parse Twitter format (already has timezone info +0000)
             dt = datetime.strptime(twitter_ts, "%a %b %d %H:%M:%S %z %Y")
 
-            # Convert to US Eastern
-            eastern_tz = pytz.timezone("America/New_York")
-            dt_eastern = dt.astimezone(eastern_tz)
+            # Convert to US Eastern using zoneinfo
+            dt_eastern = dt.astimezone(ET)
 
-            return dt_eastern.strftime("%Y-%m-%d %H:%M:%S")
+            # Include timezone offset for clarity (backward compatible parsing)
+            # datetime.fromisoformat() handles both formats
+            return dt_eastern.strftime("%Y-%m-%d %H:%M:%S%z")
         except ValueError as e:
             logger.warning(f"Failed to parse timestamp '{twitter_ts}': {e}")
             return twitter_ts
@@ -170,7 +171,7 @@ class SyncService:
         logger.info(f"Starting day-by-day sync for @{account} ({months_back} months)")
 
         # Calculate days to fetch
-        now = datetime.now(pytz.UTC)
+        now = datetime.now(timezone.utc)
         total_days = months_back * 30
 
         raw_count = 0
@@ -347,7 +348,7 @@ class SyncService:
         # Calculate target date for historical backfill
         until_date = None
         if months_back:
-            until_date = datetime.now(pytz.UTC) - timedelta(days=months_back * 30)
+            until_date = datetime.now(timezone.utc) - timedelta(days=months_back * 30)
             logger.info(f"Historical backfill: fetching back to {until_date.date()}")
 
         # Determine exists_check behavior
@@ -512,7 +513,7 @@ class SyncService:
         logger.info(f"Starting sync for {len(self.accounts)} accounts")
 
         if months_back:
-            target_date = datetime.now(pytz.UTC) - timedelta(days=months_back * 30)
+            target_date = datetime.now(timezone.utc) - timedelta(days=months_back * 30)
             logger.info(f"Historical backfill to {target_date.date()} ({months_back} months)")
 
         results = []

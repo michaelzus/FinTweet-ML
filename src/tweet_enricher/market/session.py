@@ -1,17 +1,31 @@
 """Market session detection and timestamp utilities."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
+from functools import lru_cache
 
 import pandas as pd
+import pandas_market_calendars as mcal
 
 from tweet_enricher.config import (
     AFTERHOURS_END,
-    ET,
     MARKET_CLOSE,
     MARKET_OPEN,
     PREMARKET_START,
 )
+from tweet_enricher.utils.timezone import (
+    normalize_dataframe_timezone,
+    normalize_timestamp,
+)
+
+# Re-export for backward compatibility
+__all__ = [
+    "MarketSession",
+    "get_market_session",
+    "is_market_holiday",
+    "normalize_timestamp",
+    "normalize_dataframe_timezone",
+]
 
 
 class MarketSession(Enum):
@@ -23,42 +37,50 @@ class MarketSession(Enum):
     CLOSED = "closed"
 
 
-def normalize_timestamp(timestamp: datetime) -> datetime:
+@lru_cache(maxsize=1)
+def _get_nyse_calendar() -> mcal.MarketCalendar:
+    """Get cached NYSE calendar instance."""
+    return mcal.get_calendar("NYSE")
+
+
+def is_market_holiday(check_date: date) -> bool:
     """
-    Ensure timestamp is timezone-aware and in ET.
+    Check if a given date is a US market holiday.
 
     Args:
-        timestamp: Datetime object (may be naive or aware)
+        check_date: Date to check (datetime.date object)
 
     Returns:
-        Timezone-aware datetime in ET
+        True if the date is a market holiday, False otherwise
+
+    Note:
+        This checks against the NYSE holiday schedule, which includes:
+        New Year's Day, MLK Day, Presidents' Day, Good Friday,
+        Memorial Day, Juneteenth, Independence Day, Labor Day,
+        Thanksgiving, Christmas, and any special closures.
     """
-    if timestamp.tzinfo is None:
-        return ET.localize(timestamp)
-    else:
-        return timestamp.astimezone(ET)
+    nyse = _get_nyse_calendar()
 
+    # Get valid trading days for a range around the date
+    # We check if the date is NOT in the list of valid trading days
+    start = pd.Timestamp(check_date)
+    end = pd.Timestamp(check_date)
 
-def normalize_dataframe_timezone(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensure DataFrame index is timezone-aware and in ET.
+    schedule = nyse.schedule(start_date=start, end_date=end)
 
-    Args:
-        df: DataFrame with DatetimeIndex
-
-    Returns:
-        DataFrame with timezone-aware index in ET
-    """
-    if df.index.tz is None:
-        df.index = df.index.tz_localize(ET)
-    else:
-        df.index = df.index.tz_convert(ET)
-    return df
+    # If schedule is empty, the date is not a trading day (holiday or weekend)
+    return schedule.empty
 
 
 def get_market_session(timestamp: datetime) -> MarketSession:
     """
     Determine market session for a given timestamp.
+
+    Handles:
+    - Regular trading hours (9:30 AM - 4:00 PM ET)
+    - Pre-market (4:00 AM - 9:30 AM ET)
+    - After-hours (4:00 PM - 8:00 PM ET)
+    - Closed (weekends, holidays, overnight)
 
     Args:
         timestamp: Timestamp to check
@@ -71,6 +93,10 @@ def get_market_session(timestamp: datetime) -> MarketSession:
 
     # Check if it's a weekend
     if timestamp.weekday() >= 5:  # Saturday = 5, Sunday = 6
+        return MarketSession.CLOSED
+
+    # Check if it's a market holiday
+    if is_market_holiday(timestamp.date()):
         return MarketSession.CLOSED
 
     # Convert to minutes since midnight

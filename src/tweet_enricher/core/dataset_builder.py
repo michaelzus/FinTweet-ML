@@ -382,9 +382,16 @@ class DatasetBuilder:
         """
         timestamp = normalize_timestamp(timestamp)
 
+        # Defensive assertion: timestamp must be timezone-aware after normalization
+        assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware after normalization"
+
         # For regular hours and extended hours - use intraday data
         if session in [MarketSession.REGULAR, MarketSession.PREMARKET, MarketSession.AFTERHOURS]:
             if intraday_df is not None and not intraday_df.empty:
+                # Defensive assertion: intraday data must be timezone-aware for correct comparison
+                assert intraday_df.index.tz is not None, (
+                    "Intraday data must be timezone-aware for correct timestamp comparison"
+                )
                 # Find first bar that starts AFTER tweet (realistic entry)
                 future_bars = intraday_df[intraday_df.index > timestamp]
 
@@ -395,6 +402,8 @@ class DatasetBuilder:
 
             # Fallback to next day's open
             tweet_date = timestamp.date()
+            # Defensive assertion for daily data
+            assert daily_df.index.tz is not None, "Daily data must be timezone-aware"
             future_daily = daily_df[daily_df.index.date > tweet_date]
             if not future_daily.empty:
                 price = future_daily.iloc[0]["open"]
@@ -403,6 +412,8 @@ class DatasetBuilder:
         # For closed market (overnight, weekends) - use next trading day open
         elif session == MarketSession.CLOSED:
             tweet_date = timestamp.date()
+            # Defensive assertion for daily data
+            assert daily_df.index.tz is not None, "Daily data must be timezone-aware"
             future_daily = daily_df[daily_df.index.date > tweet_date]
             if not future_daily.empty:
                 price = future_daily.iloc[0]["open"]
@@ -427,6 +438,9 @@ class DatasetBuilder:
         """
         timestamp = normalize_timestamp(timestamp)
         tweet_date = timestamp.date()
+
+        # Defensive assertion: daily data must be timezone-aware
+        assert daily_df.index.tz is not None, "Daily data must be timezone-aware for correct date comparison"
 
         # Find first trading day AFTER tweet date
         future_bars = daily_df[daily_df.index.date > tweet_date]

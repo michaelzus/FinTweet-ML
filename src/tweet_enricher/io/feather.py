@@ -1,4 +1,10 @@
-"""Feather file I/O operations for daily and intraday OHLCV data."""
+"""Feather file I/O operations for daily and intraday OHLCV data.
+
+Note on timezone handling:
+    Data from IB (Interactive Brokers) is assumed to be in US Eastern Time.
+    This module normalizes all timestamps to timezone-aware ET before saving
+    to ensure consistent timezone handling across the pipeline.
+"""
 
 import logging
 from pathlib import Path
@@ -6,26 +12,10 @@ from typing import Optional
 
 import pandas as pd
 
-from tweet_enricher.config import DAILY_DATA_DIR, ET
+from tweet_enricher.config import DAILY_DATA_DIR
+from tweet_enricher.utils.timezone import normalize_dataframe_timezone
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_timezone(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensure DataFrame index is timezone-aware in ET before saving.
-
-    Args:
-        df: DataFrame with DatetimeIndex
-
-    Returns:
-        DataFrame with timezone-aware index in ET
-    """
-    if df.index.tz is None:
-        df.index = df.index.tz_localize(ET)
-    else:
-        df.index = df.index.tz_convert(ET)
-    return df
 
 
 def save_daily_data(symbol: str, df: pd.DataFrame, data_dir: Path = DAILY_DATA_DIR) -> None:
@@ -36,13 +26,17 @@ def save_daily_data(symbol: str, df: pd.DataFrame, data_dir: Path = DAILY_DATA_D
         symbol: Stock ticker symbol
         df: DataFrame with OHLCV data (index should be 'date')
         data_dir: Directory to save feather files (default: data/daily)
+
+    Note:
+        Timestamps are normalized to timezone-aware US Eastern Time before saving.
+        IB data is assumed to already be in ET (naive or aware).
     """
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
         cache_path = data_dir / f"{symbol}.feather"
 
-        # Normalize timezone to ET before saving
-        df = _normalize_timezone(df.copy())
+        # Normalize timezone to ET before saving (DST-safe)
+        df = normalize_dataframe_timezone(df.copy())
 
         # Reset index to save it as a column (Feather doesn't preserve index)
         df_to_save = df.reset_index()
@@ -97,13 +91,17 @@ def save_intraday_data(symbol: str, df: pd.DataFrame, data_dir: Path) -> None:
         symbol: Stock ticker symbol
         df: DataFrame to save
         data_dir: Directory to save feather files
+
+    Note:
+        Timestamps are normalized to timezone-aware US Eastern Time before saving.
+        IB data is assumed to already be in ET (naive or aware).
     """
     data_dir.mkdir(parents=True, exist_ok=True)
     cache_path = data_dir / f"{symbol}.feather"
 
     try:
-        # Normalize timezone to ET before saving
-        df = _normalize_timezone(df.copy())
+        # Normalize timezone to ET before saving (DST-safe)
+        df = normalize_dataframe_timezone(df.copy())
 
         # Reset index to save it as a column (Feather doesn't preserve index)
         df_to_save = df.reset_index()
@@ -124,6 +122,9 @@ def load_intraday_data(symbol: str, data_dir: Path) -> Optional[pd.DataFrame]:
 
     Returns:
         DataFrame if cache exists and valid, None otherwise
+
+    Note:
+        Feather format preserves timezone-aware datetime columns natively.
     """
     cache_path = data_dir / f"{symbol}.feather"
 
@@ -131,7 +132,6 @@ def load_intraday_data(symbol: str, data_dir: Path) -> Optional[pd.DataFrame]:
         return None
 
     try:
-        # Feather format preserves timezone-aware datetime index natively!
         df = pd.read_feather(cache_path)
 
         # Feather doesn't preserve the index, so set it

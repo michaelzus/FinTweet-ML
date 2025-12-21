@@ -4,13 +4,12 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import pytz
-
 from tweet_enricher.config import TWITTER_DB_PATH
+from tweet_enricher.utils.timezone import ET
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +195,7 @@ class TweetDatabase:
             last_cursor: Pagination cursor for next sync
             tweets_added: Number of tweets added in this sync
         """
-        now = datetime.now(pytz.UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         with self._get_connection() as conn:
             # Get current state
@@ -299,7 +298,7 @@ class TweetDatabase:
                         tweet_id,
                         account,
                         json.dumps(json_data),
-                        datetime.now(pytz.UTC).isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 conn.commit()
@@ -451,7 +450,7 @@ class TweetDatabase:
         Get unique tickers with their first appearance date.
 
         Returns:
-            Dictionary mapping ticker symbol to first appearance datetime (ET)
+            Dictionary mapping ticker symbol to first appearance datetime (ET, timezone-aware)
         """
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -467,13 +466,20 @@ class TweetDatabase:
             for row in rows:
                 ticker = row["ticker"]
                 first_date_str = row["first_date"]
-                # Parse the timestamp string to datetime
+                # Parse the timestamp string to datetime and mark as ET-aware
                 if first_date_str:
                     try:
-                        result[ticker] = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
+                        dt = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
+                        # Mark as ET-aware (timestamps in DB are stored in ET)
+                        result[ticker] = dt.replace(tzinfo=ET)
                     except ValueError:
-                        # Try ISO format
-                        result[ticker] = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
+                        # Try ISO format (may already have timezone info)
+                        dt = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
+                        # Convert to ET if it has different timezone
+                        if dt.tzinfo is not None:
+                            result[ticker] = dt.astimezone(ET)
+                        else:
+                            result[ticker] = dt.replace(tzinfo=ET)
             return result
 
     def get_tickers_with_date_range(self) -> dict[str, tuple[datetime, datetime]]:
@@ -481,7 +487,7 @@ class TweetDatabase:
         Get unique tickers with their first and last appearance dates.
 
         Returns:
-            Dictionary mapping ticker symbol to (first_date, last_date) tuple (ET)
+            Dictionary mapping ticker symbol to (first_date, last_date) tuple (ET, timezone-aware)
         """
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -503,10 +509,22 @@ class TweetDatabase:
                     try:
                         first_dt = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
                         last_dt = datetime.strptime(last_date_str, "%Y-%m-%d %H:%M:%S")
+                        # Mark as ET-aware (timestamps in DB are stored in ET)
+                        first_dt = first_dt.replace(tzinfo=ET)
+                        last_dt = last_dt.replace(tzinfo=ET)
                     except ValueError:
-                        # Try ISO format
+                        # Try ISO format (may already have timezone info)
                         first_dt = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
                         last_dt = datetime.fromisoformat(last_date_str.replace("Z", "+00:00"))
+                        # Convert to ET if they have different timezone
+                        if first_dt.tzinfo is not None:
+                            first_dt = first_dt.astimezone(ET)
+                        else:
+                            first_dt = first_dt.replace(tzinfo=ET)
+                        if last_dt.tzinfo is not None:
+                            last_dt = last_dt.astimezone(ET)
+                        else:
+                            last_dt = last_dt.replace(tzinfo=ET)
                     result[ticker] = (first_dt, last_dt)
             return result
 
@@ -601,7 +619,7 @@ class TweetDatabase:
                 (
                     account,
                     date,
-                    datetime.now(pytz.UTC).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     tweets_count,
                     api_calls,
                 ),

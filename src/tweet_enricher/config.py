@@ -2,11 +2,11 @@
 
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-import pytz
-
-# Timezone
-ET = pytz.timezone("US/Eastern")
+# Timezone - using modern zoneinfo (Python 3.9+) for better DST handling
+# Note: For timezone utilities, prefer importing from tweet_enricher.utils.timezone
+ET = ZoneInfo("America/New_York")
 
 # Data directories
 DAILY_DATA_DIR = Path("data/daily")
