@@ -379,8 +379,10 @@ class TweetEnricher:
 
         # Calculate return to next open (using entry price as base)
         return_to_next_open = None
-        if entry_price and price_next_open:
-            return_to_next_open = (price_next_open - entry_price) / entry_price
+        if entry_price is not None and price_next_open is not None:
+            # Guard against zero entry_price to avoid division by zero
+            if entry_price != 0:
+                return_to_next_open = (price_next_open - entry_price) / entry_price
 
         # Classify 1-day label
         label_1d_3class = self._classify_return_3class(return_to_next_open)
