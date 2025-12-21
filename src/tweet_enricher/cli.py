@@ -26,6 +26,7 @@ from tweet_enricher.config import (
     ET,
     EXCLUDED_TICKERS,
     INTRADAY_CACHE_DIR,
+    INTRADAY_FETCH_DELAY,
     MARKET_CLOSE,
     TWITTER_ACCOUNTS,
     TWITTER_DB_PATH,
@@ -40,7 +41,6 @@ from tweet_enricher.data.tickers import (
     fetch_sp500_tickers,
     filter_tickers_by_volume,
 )
-from tweet_enricher.io.feather import save_daily_data
 from tweet_enricher.parsers.discord import DiscordToCSVConverter
 from tweet_enricher.twitter.database import TweetDatabase
 from tweet_enricher.twitter.sync import SyncService
@@ -79,6 +79,38 @@ def normalize_duration(duration: str) -> str:
         return f"{match.group(1)} {match.group(2).upper()}"
     # Return original if format is unrecognized (let IB API report error)
     return duration
+
+
+def duration_to_days(duration: str) -> int:
+    """
+    Convert IB duration string to approximate number of calendar days.
+
+    Args:
+        duration: Duration string (e.g., "1 Y", "6 M", "30 D")
+
+    Returns:
+        Approximate number of calendar days
+    """
+    duration = normalize_duration(duration)
+    match = re.match(r"^(\d+)\s+([SDWMY])$", duration, re.IGNORECASE)
+    if not match:
+        return 200  # Default fallback
+
+    value = int(match.group(1))
+    unit = match.group(2).upper()
+
+    # Convert to calendar days (approximate)
+    if unit == "Y":
+        return value * 365
+    elif unit == "M":
+        return value * 30
+    elif unit == "W":
+        return value * 7
+    elif unit == "D":
+        return value
+    elif unit == "S":  # Seconds - unusual but handle it
+        return max(1, value // 86400)
+    return 200
 
 
 # ============================================================================
@@ -124,7 +156,14 @@ def cmd_convert(args: argparse.Namespace) -> int:
 # FLOW 1: OHLCV Commands (IB API)
 # ============================================================================
 async def _ohlcv_sync(args: argparse.Namespace) -> int:
-    """Async implementation of ohlcv sync command."""
+    """
+    Sync OHLCV data using smart caching with incremental updates and backfill.
+
+    This command:
+    1. Fetches daily data for the full requested duration
+    2. Fetches intraday data with smart caching (checks existing cache first)
+    3. Automatically backfills intraday data to match daily duration
+    """
     logger = logging.getLogger(__name__)
 
     # Determine which symbols to fetch
@@ -163,36 +202,80 @@ async def _ohlcv_sync(args: argparse.Namespace) -> int:
     else:
         symbols = args.tickers
 
+    # Calculate target start date from duration
+    duration = normalize_duration(args.duration)
+    total_days = duration_to_days(duration)
+    now = datetime.now(ET)
+    target_start_date = (now - timedelta(days=total_days)).date()
+
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info(f"OHLCV SYNC: {len(symbols)} symbols, duration={duration} ({total_days} days)")
+    logger.info(f"Target date range: {target_start_date} to {now.date()}")
+    logger.info("=" * 80)
+
+    # Initialize IB fetcher and DataCache
     fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
+    cache = DataCache(
+        ib_fetcher=fetcher,
+        daily_dir=Path(args.output_dir),
+        intraday_dir=Path(args.intraday_dir),
+    )
 
     connected = await fetcher.connect()
     if not connected:
         return 1
 
     try:
-        duration = normalize_duration(args.duration)
-        logger.info(f"Fetching historical data for {len(symbols)} symbols...")
-        data_dict = await fetcher.fetch_multiple_stocks(
+        # Step 1: Fetch daily data (smart caching with incremental updates)
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(f"STEP 1: Syncing DAILY data ({duration})...")
+        logger.info("=" * 80)
+
+        await cache.prefetch_all_daily_data(
             symbols=symbols,
-            exchange=args.exchange,
-            currency=args.currency,
+            max_date=now,
             duration=duration,
-            bar_size=args.bar_size,
             batch_size=args.batch_size,
-            delay_between_batches=args.batch_delay,
         )
 
-        if data_dict:
-            output_dir = Path(args.output_dir)
-            for symbol, df in data_dict.items():
-                save_daily_data(symbol, df, output_dir)
+        # Step 2: Fetch intraday data (unless --daily-only)
+        if not args.daily_only:
+            # Step 2a: Initial intraday fetch (up to 200 days with smart caching)
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("STEP 2: Syncing INTRADAY data (initial fetch)...")
+            logger.info("=" * 80)
 
-            logger.info("Summary:")
-            total_records = sum(len(df) for df in data_dict.values())
-            logger.info(f"Total records: {total_records}")
-            logger.info(f"Files saved to: {args.output_dir}/")
-        else:
-            logger.warning("No data fetched")
+            await cache.prefetch_all_intraday_data(
+                symbols=symbols,
+                max_date=now,
+                total_days=min(total_days, 200),  # IB limit per request
+                delay_between_symbols=INTRADAY_FETCH_DELAY,
+            )
+
+            # Step 2b: Backfill intraday to match daily duration (if needed)
+            if total_days > 200:
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"STEP 3: Backfilling INTRADAY data to {target_start_date}...")
+                logger.info("=" * 80)
+
+                await cache.backfill_intraday_data(
+                    symbols=symbols,
+                    target_start_date=target_start_date,
+                    delay_between_symbols=INTRADAY_FETCH_DELAY,
+                )
+
+        # Final Summary
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("SYNC COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"Daily data:    {args.output_dir}/")
+        if not args.daily_only:
+            logger.info(f"Intraday data: {args.intraday_dir}/")
 
     finally:
         await fetcher.disconnect()
@@ -951,23 +1034,27 @@ Examples:
     # ohlcv sync
     ohlcv_sync_parser = ohlcv_subparsers.add_parser(
         "sync",
-        help="Sync OHLCV data from Interactive Brokers",
+        help="Sync OHLCV data from Interactive Brokers (daily + intraday)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  fintweet-ml ohlcv sync --tickers AAPL MSFT GOOGL
-  fintweet-ml ohlcv sync --sp500
-  fintweet-ml ohlcv sync --all --duration "1 Y"
+  fintweet-ml ohlcv sync --tickers AAPL MSFT GOOGL   # Fetches daily + intraday
+  fintweet-ml ohlcv sync --sp500                     # All S&P 500 stocks
+  fintweet-ml ohlcv sync --tickers NVDA --daily-only # Daily only, skip intraday
         """,
     )
     ohlcv_sync_parser.add_argument("--tickers", nargs="+", help="List of stock symbols")
     ohlcv_sync_parser.add_argument("--sp500", action="store_true", help="Fetch data for all S&P 500 stocks")
     ohlcv_sync_parser.add_argument("--russell1000", action="store_true", help="Fetch data for all Russell 1000 stocks")
     ohlcv_sync_parser.add_argument("--all", action="store_true", help="Fetch data for both S&P 500 and Russell 1000")
-    ohlcv_sync_parser.add_argument("--duration", default="1 Y", help="Duration string (default: 1 Y)")
-    ohlcv_sync_parser.add_argument("--bar-size", default="1 day", help="Bar size (default: 1 day)")
-    ohlcv_sync_parser.add_argument("--output-dir", default=str(DAILY_DATA_DIR), help=f"Output directory (default: {DAILY_DATA_DIR})")
-    ohlcv_sync_parser.add_argument("--batch-size", type=int, default=200, help="Batch size (default: 200)")
+    ohlcv_sync_parser.add_argument("--daily-only", action="store_true", help="Fetch only daily data (skip intraday)")
+    ohlcv_sync_parser.add_argument("--duration", default="1 Y", help="Duration for daily data (default: 1 Y)")
+    ohlcv_sync_parser.add_argument("--bar-size", default="1 day", help="Bar size for daily data (default: 1 day)")
+    ohlcv_sync_parser.add_argument("--output-dir", default=str(DAILY_DATA_DIR), help=f"Daily data directory (default: {DAILY_DATA_DIR})")
+    ohlcv_sync_parser.add_argument(
+        "--intraday-dir", default=str(INTRADAY_CACHE_DIR), help=f"Intraday data directory (default: {INTRADAY_CACHE_DIR})"
+    )
+    ohlcv_sync_parser.add_argument("--batch-size", type=int, default=200, help="Batch size for daily fetch (default: 200)")
     ohlcv_sync_parser.add_argument("--batch-delay", type=float, default=2.0, help="Delay between batches (default: 2.0)")
     ohlcv_sync_parser.add_argument("--host", default="127.0.0.1", help="TWS/Gateway host (default: 127.0.0.1)")
     ohlcv_sync_parser.add_argument("--port", type=int, default=7497, help="TWS/Gateway port (default: 7497)")

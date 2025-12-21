@@ -6,9 +6,26 @@ from typing import Optional
 
 import pandas as pd
 
-from tweet_enricher.config import DAILY_DATA_DIR
+from tweet_enricher.config import DAILY_DATA_DIR, ET
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_timezone(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensure DataFrame index is timezone-aware in ET before saving.
+
+    Args:
+        df: DataFrame with DatetimeIndex
+
+    Returns:
+        DataFrame with timezone-aware index in ET
+    """
+    if df.index.tz is None:
+        df.index = df.index.tz_localize(ET)
+    else:
+        df.index = df.index.tz_convert(ET)
+    return df
 
 
 def save_daily_data(symbol: str, df: pd.DataFrame, data_dir: Path = DAILY_DATA_DIR) -> None:
@@ -23,6 +40,9 @@ def save_daily_data(symbol: str, df: pd.DataFrame, data_dir: Path = DAILY_DATA_D
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
         cache_path = data_dir / f"{symbol}.feather"
+
+        # Normalize timezone to ET before saving
+        df = _normalize_timezone(df.copy())
 
         # Reset index to save it as a column (Feather doesn't preserve index)
         df_to_save = df.reset_index()
@@ -82,6 +102,9 @@ def save_intraday_data(symbol: str, df: pd.DataFrame, data_dir: Path) -> None:
     cache_path = data_dir / f"{symbol}.feather"
 
     try:
+        # Normalize timezone to ET before saving
+        df = _normalize_timezone(df.copy())
+
         # Reset index to save it as a column (Feather doesn't preserve index)
         df_to_save = df.reset_index()
         df_to_save.columns = ["date"] + list(df_to_save.columns[1:])
