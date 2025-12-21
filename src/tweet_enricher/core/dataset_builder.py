@@ -209,6 +209,15 @@ class DatasetBuilder:
         # Create output DataFrame
         output_df = pd.DataFrame(results)
 
+        # Filter out invalid labels (shift left - filter at preparation, not training)
+        initial_count = len(output_df)
+        output_df = output_df[output_df["is_reliable_label"] == True].copy()  # noqa: E712
+        output_df = output_df.dropna(subset=["label_1d_3class"])
+        filtered_count = initial_count - len(output_df)
+
+        if verbose and filtered_count > 0:
+            logger.info(f"Filtered {filtered_count} rows with invalid/unreliable labels")
+
         # Reorder columns for readability
         column_order = [col for col in OUTPUT_COLUMN_ORDER if col in output_df.columns]
         output_df = output_df[column_order]

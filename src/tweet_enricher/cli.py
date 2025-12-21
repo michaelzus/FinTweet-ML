@@ -642,19 +642,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     logger.info("=" * 80)
     logger.info("SUMMARY")
     logger.info("=" * 80)
-    successful = sum(1 for _, r in output_df.iterrows() if r["entry_price"] is not None)
-    reliable = sum(1 for _, r in output_df.iterrows() if r.get("is_reliable_label", False))
-    logger.info(f"Total processed: {len(output_df)}")
-    logger.info(f"Successful: {successful}")
-    logger.info(f"Reliable labels: {reliable}")
+    logger.info(f"Total samples: {len(output_df)}")
 
     # Label distribution
-    labels = output_df["label_1d_3class"].dropna().tolist()
-    if labels:
-        label_counts = Counter(labels)
-        logger.info("\nLabel distribution:")
-        for label, count in sorted(label_counts.items()):
-            logger.info(f"  {label}: {count}")
+    label_counts = Counter(output_df["label_1d_3class"].tolist())
+    logger.info("\nLabel distribution:")
+    for label, count in sorted(label_counts.items()):
+        pct = 100 * count / len(output_df) if len(output_df) > 0 else 0
+        logger.info(f"  {label}: {count} ({pct:.1f}%)")
 
     logger.info(f"\nDataset saved to: {output_path}")
 
