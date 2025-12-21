@@ -47,7 +47,13 @@ NUMERICAL_FEATURES = [
 # Categorical features (will be embedded)
 # BASELINE: author, category
 # PHASE 1: market_regime, sector, market_cap_bucket (market context)
-CATEGORICAL_FEATURES = ["author", "category", "market_regime", "sector", "market_cap_bucket"]
+CATEGORICAL_FEATURES = [
+    "author",
+    "category",
+    "market_regime",
+    "sector",
+    "market_cap_bucket",
+]
 
 # Columns explicitly EXCLUDED from features (future-looking / targets / reference)
 EXCLUDED_FROM_FEATURES = [
@@ -106,4 +112,3 @@ DEFAULT_WEIGHT_DECAY = 0.01
 DEFAULT_TEST_SIZE = 0.10
 DEFAULT_VAL_SIZE = 0.10
 RANDOM_SEED = 42
-

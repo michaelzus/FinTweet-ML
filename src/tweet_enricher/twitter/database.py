@@ -124,7 +124,7 @@ class TweetDatabase:
         with self._get_connection() as conn:
             conn.executescript(self.SCHEMA)
             conn.commit()
-        
+
         # Run migrations for existing databases
         self._migrate_schema()
         logger.debug(f"Database initialized at {self.db_path}")
@@ -135,7 +135,7 @@ class TweetDatabase:
             # Check if backfill columns exist
             cursor = conn.execute("PRAGMA table_info(sync_state)")
             columns = {row["name"] for row in cursor.fetchall()}
-            
+
             # Add backfill columns if missing
             if "backfill_cursor" not in columns:
                 conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_cursor TEXT")
@@ -143,7 +143,7 @@ class TweetDatabase:
                 conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_target_date TEXT")
             if "backfill_complete" not in columns:
                 conn.execute("ALTER TABLE sync_state ADD COLUMN backfill_complete INTEGER DEFAULT 0")
-            
+
             conn.commit()
 
     # =========================================================================
@@ -161,9 +161,7 @@ class TweetDatabase:
             SyncState if exists, None otherwise
         """
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM sync_state WHERE account = ?", (account,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM sync_state WHERE account = ?", (account,)).fetchone()
 
             if row:
                 last_sync_at = None
@@ -313,9 +311,7 @@ class TweetDatabase:
     def tweet_exists(self, tweet_id: str) -> bool:
         """Check if a tweet already exists in the database."""
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM tweets_raw WHERE id = ?", (tweet_id,)
-            ).fetchone()
+            row = conn.execute("SELECT 1 FROM tweets_raw WHERE id = ?", (tweet_id,)).fetchone()
             return row is not None
 
     # =========================================================================
@@ -459,25 +455,19 @@ class TweetDatabase:
     def get_unique_tickers(self) -> list[str]:
         """Get list of unique tickers in the database."""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT ticker FROM tweets_processed ORDER BY ticker"
-            ).fetchall()
+            rows = conn.execute("SELECT DISTINCT ticker FROM tweets_processed ORDER BY ticker").fetchall()
             return [row["ticker"] for row in rows]
 
     def get_raw_tweet_counts_by_account(self) -> dict[str, int]:
         """Get raw tweet counts per account from the database."""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT account, COUNT(*) as cnt FROM tweets_raw GROUP BY account"
-            ).fetchall()
+            rows = conn.execute("SELECT account, COUNT(*) as cnt FROM tweets_raw GROUP BY account").fetchall()
             return {row["account"]: row["cnt"] for row in rows}
 
     def get_journal_days_by_account(self) -> dict[str, int]:
         """Get number of days fetched per account from the journal."""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT account, COUNT(*) as cnt FROM fetch_journal GROUP BY account"
-            ).fetchall()
+            rows = conn.execute("SELECT account, COUNT(*) as cnt FROM fetch_journal GROUP BY account").fetchall()
             return {row["account"]: row["cnt"] for row in rows}
 
     def get_stats(self) -> dict:
@@ -498,10 +488,14 @@ class TweetDatabase:
                 "unique_tweets": unique_tweets,
                 "unique_tickers": unique_tickers,
                 "unique_authors": unique_authors,
-                "date_range": {
-                    "min": date_range["min_date"],
-                    "max": date_range["max_date"],
-                } if date_range["min_date"] else None,
+                "date_range": (
+                    {
+                        "min": date_range["min_date"],
+                        "max": date_range["max_date"],
+                    }
+                    if date_range["min_date"]
+                    else None
+                ),
             }
 
     # =========================================================================
@@ -578,4 +572,3 @@ class TweetDatabase:
                 (account,),
             ).fetchall()
             return [row["fetch_date"] for row in rows]
-

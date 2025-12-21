@@ -1,6 +1,6 @@
 """Class weight computation for imbalanced classification."""
 
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -63,16 +63,39 @@ def weights_to_tensor(weights: np.ndarray):
     return torch.tensor(weights, dtype=torch.float32)
 
 
-def get_weight_summary(labels: Union[pd.Series, np.ndarray]) -> dict:
+def apply_buy_boost(weights: np.ndarray, boost: float) -> np.ndarray:
+    """Apply a multiplicative boost to BUY class weight.
+
+    This is useful when BUY recall is too low - increasing BUY weight
+    makes the model more aggressive at predicting BUY at the cost of precision.
+
+    Args:
+        weights: Array of class weights [SELL, HOLD, BUY].
+        boost: Multiplier for BUY weight (e.g., 1.4 = 40% increase).
+
+    Returns:
+        Modified weights array with boosted BUY weight.
+    """
+    boosted = weights.copy()
+    boosted[2] *= boost  # Index 2 = BUY
+    return boosted
+
+
+def get_weight_summary(
+    labels: Union[pd.Series, np.ndarray],
+    weights: Optional[np.ndarray] = None,
+) -> dict:
     """Generate summary of class weights.
 
     Args:
         labels: Array-like of labels.
+        weights: Pre-computed weights array. If None, computes from labels.
 
     Returns:
         Dictionary with weight information.
     """
-    weights = compute_class_weights(labels)
+    if weights is None:
+        weights = compute_class_weights(labels)
 
     # Convert labels to integers for counting
     if isinstance(labels, pd.Series):
@@ -100,4 +123,3 @@ def get_weight_summary(labels: Union[pd.Series, np.ndarray]) -> dict:
         summary[label_name]["count"] = int(count)
 
     return summary
-

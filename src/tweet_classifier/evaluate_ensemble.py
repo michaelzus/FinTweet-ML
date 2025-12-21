@@ -33,7 +33,11 @@ from tweet_classifier.ensemble import (
     evaluate_ensemble,
     load_ensemble,
 )
-from tweet_classifier.evaluate import compute_baselines, generate_classification_report, plot_confusion_matrix
+from tweet_classifier.evaluate import (
+    compute_baselines,
+    generate_classification_report,
+    plot_confusion_matrix,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -116,14 +120,18 @@ def run_ensemble_evaluation(
     # Classification report
     logger.info("\n" + "=" * 50)
     logger.info("Classification Report:")
-    report = generate_classification_report(eval_results["labels"], eval_results["predictions"])
+    report = generate_classification_report(
+        eval_results["labels"], eval_results["predictions"]
+    )
     logger.info("\n" + report)
     results["classification_report"] = report
 
     # Confusion matrix
     if output_dir is not None:
         cm_path = output_dir / "ensemble_confusion_matrix.png"
-        plot_confusion_matrix(eval_results["labels"], eval_results["predictions"], cm_path)
+        plot_confusion_matrix(
+            eval_results["labels"], eval_results["predictions"], cm_path
+        )
         results["confusion_matrix_path"] = str(cm_path)
 
     # Trading metrics
@@ -139,13 +147,21 @@ def run_ensemble_evaluation(
         )
         results["trading_metrics"] = trading_metrics
 
-        logger.info(f"Information Coefficient: {trading_metrics['information_coefficient']:.4f} "
-                    f"(p={trading_metrics['ic_pvalue']:.4f})")
-        ic_significant = "YES ✓" if trading_metrics['ic_pvalue'] < 0.05 else "NO ✗"
+        logger.info(
+            f"Information Coefficient: {trading_metrics['information_coefficient']:.4f} "
+            f"(p={trading_metrics['ic_pvalue']:.4f})"
+        )
+        ic_significant = "YES ✓" if trading_metrics["ic_pvalue"] < 0.05 else "NO ✗"
         logger.info(f"IC Statistically Significant: {ic_significant}")
-        logger.info(f"Directional Accuracy: {trading_metrics.get('directional_accuracy', 0):.2%}")
-        logger.info(f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top']:.2f}")
-        logger.info(f"Annualized Return (top 30%): {trading_metrics['simulated_return_top']:.2%}")
+        logger.info(
+            f"Directional Accuracy: {trading_metrics.get('directional_accuracy', 0):.2%}"
+        )
+        logger.info(
+            f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top']:.2f}"
+        )
+        logger.info(
+            f"Annualized Return (top 30%): {trading_metrics['simulated_return_top']:.2%}"
+        )
 
     # Baselines
     logger.info("\n" + "=" * 50)
@@ -154,10 +170,14 @@ def run_ensemble_evaluation(
     results["baselines"] = baselines
 
     logger.info(f"Ensemble Accuracy:   {results['accuracy']:.2%}")
-    logger.info(f"Naive ({baselines['majority_class']}):  {baselines['naive_accuracy']:.2%}")
+    logger.info(
+        f"Naive ({baselines['majority_class']}):  {baselines['naive_accuracy']:.2%}"
+    )
     logger.info(f"Random:              {baselines['random_accuracy']:.2%}")
 
-    improvement_vs_naive = (results["accuracy"] - baselines["naive_accuracy"]) / baselines["naive_accuracy"]
+    improvement_vs_naive = (
+        results["accuracy"] - baselines["naive_accuracy"]
+    ) / baselines["naive_accuracy"]
     results["improvement_vs_naive"] = improvement_vs_naive
     logger.info(f"\nImprovement vs Naive:  {improvement_vs_naive:+.1%}")
 
@@ -174,6 +194,7 @@ def run_ensemble_evaluation(
 def _make_serializable(obj: Any) -> Any:
     """Convert numpy types to Python native types for JSON serialization."""
     import numpy as np
+
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, (np.int64, np.int32)):
@@ -225,6 +246,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-

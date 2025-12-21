@@ -49,9 +49,13 @@ def split_by_hash(
     val_of_temp = val_size / temp_size  # Second split: val vs test from temp
 
     # Split hashes (not rows!) to prevent text leakage
-    train_hashes, temp_hashes = train_test_split(unique_hashes, test_size=temp_size, random_state=random_state)
+    train_hashes, temp_hashes = train_test_split(
+        unique_hashes, test_size=temp_size, random_state=random_state
+    )
 
-    val_hashes, test_hashes = train_test_split(temp_hashes, test_size=(1 - val_of_temp), random_state=random_state)
+    val_hashes, test_hashes = train_test_split(
+        temp_hashes, test_size=(1 - val_of_temp), random_state=random_state
+    )
 
     # Assign rows based on hash membership
     df_train = df[df["tweet_hash"].isin(train_hashes)].copy()
@@ -61,7 +65,9 @@ def split_by_hash(
     return df_train, df_val, df_test
 
 
-def get_split_summary(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.DataFrame) -> dict:
+def get_split_summary(
+    df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.DataFrame
+) -> dict:
     """Generate summary of data splits.
 
     Args:
@@ -96,7 +102,9 @@ def get_split_summary(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.
     return summary
 
 
-def verify_no_leakage(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.DataFrame) -> bool:
+def verify_no_leakage(
+    df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.DataFrame
+) -> bool:
     """Verify that no tweet hashes appear in multiple splits.
 
     Args:
@@ -119,13 +127,19 @@ def verify_no_leakage(df_train: pd.DataFrame, df_val: pd.DataFrame, df_test: pd.
     val_test_overlap = val_hashes & test_hashes
 
     if train_val_overlap:
-        raise ValueError(f"Leakage: {len(train_val_overlap)} hashes appear in both train and val")
+        raise ValueError(
+            f"Leakage: {len(train_val_overlap)} hashes appear in both train and val"
+        )
 
     if train_test_overlap:
-        raise ValueError(f"Leakage: {len(train_test_overlap)} hashes appear in both train and test")
+        raise ValueError(
+            f"Leakage: {len(train_test_overlap)} hashes appear in both train and test"
+        )
 
     if val_test_overlap:
-        raise ValueError(f"Leakage: {len(val_test_overlap)} hashes appear in both val and test")
+        raise ValueError(
+            f"Leakage: {len(val_test_overlap)} hashes appear in both val and test"
+        )
 
     return True
 
@@ -158,7 +172,9 @@ def split_by_time(
         ValueError: If timestamp column is missing or not datetime.
     """
     if timestamp_col not in df.columns:
-        raise ValueError(f"DataFrame must have '{timestamp_col}' column for temporal splitting")
+        raise ValueError(
+            f"DataFrame must have '{timestamp_col}' column for temporal splitting"
+        )
 
     # Ensure timestamp is datetime
     df = df.copy()
@@ -228,4 +244,3 @@ def get_temporal_split_summary(
     }
 
     return summary
-

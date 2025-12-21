@@ -155,8 +155,7 @@ class MarketRegimeClassifier:
         return_str = f"{return_nd:.2%}" if return_nd is not None else "N/A"
         vol_str = f"{volatility:.2%}" if volatility is not None else "N/A"
         logger.debug(
-            f"Regime for {date_key}: {regime} "
-            f"(return_{self.lookback_return}d={return_str}, vol_{self.lookback_vol}d={vol_str})"
+            f"Regime for {date_key}: {regime} " f"(return_{self.lookback_return}d={return_str}, vol_{self.lookback_vol}d={vol_str})"
         )
 
         # Cache result
@@ -183,4 +182,3 @@ def get_market_regime(spy_df: pd.DataFrame, date: datetime) -> str:
     if _classifier is None:
         _classifier = MarketRegimeClassifier()
     return _classifier.classify(spy_df, date)
-

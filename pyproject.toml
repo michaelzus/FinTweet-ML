@@ -1,7 +1,7 @@
 [project]
-name = "tweet-enricher"
+name = "fintweet-ml"
 version = "0.1.0"
-description = "A tool for enriching tweet data with financial indicators and market information"
+description = "ML pipeline for enriching financial tweets with market data and sentiment classification"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -45,8 +45,7 @@ where = ["src"]
 [tool.black]
 line-length = 140
 target-version = ['py311', 'py312']
-include = '\\.pyi?$'
-exclude = '''
+extend-exclude = '''
 /(
     \.eggs
   | \.git
@@ -54,6 +53,7 @@ exclude = '''
   | \.mypy_cache
   | \.tox
   | \.venv
+  | venv
   | _build
   | buck-out
   | build
@@ -66,6 +66,11 @@ exclude = '''
 python_version = "3.12"
 ignore_missing_imports = true
 exclude = "(^tests/|setup\\.py$)"
+
+# Flake8 configuration - linting
+[tool.flake8]
+max-line-length = 140
+ignore = ["W503", "W504", "E402", "E203"]
 
 # Pydocstyle configuration - docstring style checking
 [tool.pydocstyle]

@@ -9,6 +9,7 @@ import pytz
 
 from tweet_enricher.config import TWITTER_ACCOUNTS, TWITTER_RATE_LIMIT_DELAY
 from tweet_enricher.parsers.discord import MessageCategorizer, MessageProcessor
+from tweet_enricher.text.cleaner import clean_for_finbert
 from tweet_enricher.twitter.client import Tweet, TwitterClient
 from tweet_enricher.twitter.database import ProcessedTweet, TweetDatabase
 
@@ -153,7 +154,7 @@ class SyncService:
     ) -> dict:
         """
         Sync tweets for an account using day-by-day date-based search.
-        
+
         This is efficient for historical backfill as it uses the
         advanced_search endpoint with date filters. Day-by-day is faster
         because each query returns fewer results.
@@ -167,36 +168,34 @@ class SyncService:
             Dict with sync results including API calls made
         """
         logger.info(f"Starting day-by-day sync for @{account} ({months_back} months)")
-        
+
         # Calculate days to fetch
         now = datetime.now(pytz.UTC)
         total_days = months_back * 30
-        
+
         raw_count = 0
         total_api_calls = 0
         total_skipped = 0
         first_tweet_id: Optional[str] = None
         new_tweets: list[ProcessedTweet] = []
-        
+
         exists_check = self.database.tweet_exists
         days_skipped_journal = 0
-        
+
         # Fetch day by day (oldest first for better progress display)
         # Skip today (day_offset=0) since tweets are still being posted
         for day_offset in range(total_days - 1, 0, -1):
             target_date = now - timedelta(days=day_offset)
             since_date = target_date.strftime("%Y-%m-%d")
             until_date = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
-            
+
             days_done = total_days - day_offset
             pct = (days_done / total_days) * 100
-            
+
             if show_progress:
-                sys.stdout.write(
-                    f"\r  [{pct:5.1f}%] {since_date} | {raw_count:,} tweets | {total_api_calls} calls    "
-                )
+                sys.stdout.write(f"\r  [{pct:5.1f}%] {since_date} | {raw_count:,} tweets | {total_api_calls} calls    ")
                 sys.stdout.flush()
-            
+
             # Check fetch journal - skip if already fetched
             if self.database.is_day_fetched(account, since_date):
                 days_skipped_journal += 1
@@ -204,14 +203,14 @@ class SyncService:
                     sys.stdout.write("S")  # Skipped (already in journal)
                     sys.stdout.flush()
                 continue
-            
+
             # Retry up to 3 times on failure
             max_retries = 3
             day_tweets_count = 0
             day_api_calls = 0
             success = False
             day_raw_tweets: list[Tweet] = []  # Collect tweets, only save on success
-            
+
             for attempt in range(max_retries):
                 try:
                     # Don't use save_callback here - collect tweets first, save only on success
@@ -228,13 +227,13 @@ class SyncService:
                     total_api_calls += api_calls
                     total_skipped += skipped
                     success = True
-                    
+
                     # Show dot for each day completed
                     if show_progress:
                         sys.stdout.write(".")
                         sys.stdout.flush()
                     break  # Success, move to next day
-                        
+
                 except Exception as e:
                     if attempt < max_retries - 1:
                         # Retry after short delay
@@ -242,6 +241,7 @@ class SyncService:
                             sys.stdout.write("R")  # Mark retry
                             sys.stdout.flush()
                         import time
+
                         time.sleep(2)  # Wait 2s before retry
                     else:
                         # Final failure
@@ -249,7 +249,7 @@ class SyncService:
                             sys.stdout.write("X")  # Mark failed day
                             sys.stdout.flush()
                         logger.warning(f"Failed to fetch {since_date} after {max_retries} attempts: {e}")
-            
+
             # Only save tweets AFTER the entire day's fetch succeeded
             if success and day_raw_tweets:
                 for tweet in day_raw_tweets:
@@ -258,12 +258,12 @@ class SyncService:
                         raw_count += 1
                         if first_tweet_id is None:
                             first_tweet_id = tweet.id
-                    
+
                     processed = self._process_tweet(tweet)
                     if processed:
                         self.database.insert_processed_tweets(processed)
                         new_tweets.extend(processed)
-            
+
             # Mark day as fetched in journal (only on success)
             if success:
                 self.database.mark_day_fetched(
@@ -272,19 +272,19 @@ class SyncService:
                     tweets_count=day_tweets_count,
                     api_calls=day_api_calls,
                 )
-        
+
         if show_progress:
             print()  # New line after progress
-        
+
         processed_count = len(new_tweets)
-        
+
         # Always update sync state (even if no new tweets, to record the sync happened)
         self.database.update_sync_state(
             account=account,
             last_tweet_id=first_tweet_id,  # May be None if no new tweets
             tweets_added=raw_count,  # Use raw_count not processed (which is per-ticker)
         )
-        
+
         result = {
             "account": account,
             "raw_tweets_fetched": raw_count,
@@ -294,13 +294,13 @@ class SyncService:
             "days_fetched": total_days,
             "days_skipped_journal": days_skipped_journal,
         }
-        
+
         skip_msg = f", {days_skipped_journal} days skipped" if days_skipped_journal > 0 else ""
         logger.info(
             f"Day-by-day sync complete for @{account}: "
             f"{raw_count} raw, {processed_count} processed ({total_api_calls} API calls{skip_msg})"
         )
-        
+
         return result
 
     def sync_account(
@@ -315,7 +315,7 @@ class SyncService:
     ) -> dict:
         """
         Sync tweets for a single account.
-        
+
         Uses smart incremental fetching: stops API pagination immediately
         when reaching tweets we already have, minimizing API costs.
 
@@ -338,18 +338,18 @@ class SyncService:
                 months_back=months_back,
                 show_progress=show_progress,
             )
-        
+
         logger.info(f"Starting sync for @{account}")
 
         # Get current sync state
         state = self.database.get_sync_state(account)
-        
+
         # Calculate target date for historical backfill
         until_date = None
         if months_back:
             until_date = datetime.now(pytz.UTC) - timedelta(days=months_back * 30)
             logger.info(f"Historical backfill: fetching back to {until_date.date()}")
-        
+
         # Determine exists_check behavior
         if full_sync:
             logger.info("Full sync (will re-fetch all tweets)")
@@ -385,32 +385,32 @@ class SyncService:
         # IMMEDIATE SAVE callback - saves raw tweet right away (crash-safe)
         def save_callback(tweet: Tweet) -> bool:
             nonlocal raw_count, first_tweet_id, new_tweets
-            
+
             # Track first (most recent) tweet ID
             if first_tweet_id is None:
                 first_tweet_id = tweet.id
-            
+
             # Save raw tweet IMMEDIATELY (INSERT OR IGNORE for duplicates)
             saved = self.database.insert_raw_tweet(tweet.id, account, tweet.raw_json)
             if saved:
                 raw_count += 1
-            
+
             # Process and save processed tweets immediately too
             processed = self._process_tweet(tweet)
             if processed:
                 self.database.insert_processed_tweets(processed)
                 new_tweets.extend(processed)
-            
+
             return saved
 
         # Progress callback
         progress_callback = None
         if show_progress:
             target_date_str = until_date.strftime("%Y-%m-%d") if until_date else "latest"
-            
+
             def progress_callback(progress: dict) -> None:
                 nonlocal skipped_existing
-                skipped_existing = progress.get('skipped_existing', 0)
+                skipped_existing = progress.get("skipped_existing", 0)
                 skip_info = f" | Skipped: {skipped_existing}" if skipped_existing > 0 else ""
                 sys.stdout.write(
                     f"\r  Progress: {progress['tweets_fetched']:,} tweets | "
@@ -482,10 +482,7 @@ class SyncService:
         }
 
         skip_msg = f", {skipped_existing} skipped" if skipped_existing > 0 else ""
-        logger.info(
-            f"Sync complete for @{account}: "
-            f"{raw_count} raw, {processed_count} processed{skip_msg} ({api_calls} API calls)"
-        )
+        logger.info(f"Sync complete for @{account}: " f"{raw_count} raw, {processed_count} processed{skip_msg} ({api_calls} API calls)")
 
         return result
 
@@ -513,17 +510,17 @@ class SyncService:
             List of sync results per account
         """
         logger.info(f"Starting sync for {len(self.accounts)} accounts")
-        
+
         if months_back:
             target_date = datetime.now(pytz.UTC) - timedelta(days=months_back * 30)
             logger.info(f"Historical backfill to {target_date.date()} ({months_back} months)")
-        
+
         results = []
 
         for i, account in enumerate(self.accounts, 1):
             if show_progress:
                 print(f"\n[{i}/{len(self.accounts)}] Fetching @{account}...")
-            
+
             try:
                 result = self.sync_account(
                     account=account,
@@ -537,29 +534,28 @@ class SyncService:
                 results.append(result)
             except Exception as e:
                 logger.error(f"Failed to sync @{account}: {e}")
-                results.append({
-                    "account": account,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "account": account,
+                        "error": str(e),
+                    }
+                )
 
         # Summary
         total_raw = sum(r.get("raw_tweets_fetched", 0) for r in results)
         total_processed = sum(r.get("processed_tweets_added", 0) for r in results)
         total_api_calls = sum(r.get("api_calls", 0) for r in results)
-        logger.info(
-            f"Sync complete: {total_raw} raw tweets, {total_processed} processed "
-            f"({total_api_calls} API calls)"
-        )
+        logger.info(f"Sync complete: {total_raw} raw tweets, {total_processed} processed " f"({total_api_calls} API calls)")
 
         return results
 
     def estimate_backfill(self, months_back: int = 6) -> dict:
         """
         Estimate time and API calls for historical backfill.
-        
+
         Args:
             months_back: Number of months to fetch
-            
+
         Returns:
             Dict with estimates
         """
@@ -567,15 +563,15 @@ class SyncService:
         tweets_per_day = 30  # Average across accounts
         days = months_back * 30
         total_tweets = tweets_per_day * days * len(self.accounts)
-        
+
         # API pagination
         tweets_per_request = 20
         api_calls = total_tweets // tweets_per_request
-        
+
         # Time estimate (with rate limiting)
         seconds = api_calls * TWITTER_RATE_LIMIT_DELAY
         hours = seconds / 3600
-        
+
         return {
             "accounts": len(self.accounts),
             "months": months_back,
@@ -595,7 +591,7 @@ class SyncService:
         """
         states = self.database.get_all_sync_states()
         stats = self.database.get_stats()
-        
+
         # Get ACTUAL raw tweet counts from database (not from sync_state)
         raw_counts = self.database.get_raw_tweet_counts_by_account()
         journal_days = self.database.get_journal_days_by_account()
@@ -603,15 +599,17 @@ class SyncService:
         # Format sync states - use actual counts from database
         accounts_status = []
         synced_accounts = {s.account for s in states}
-        
+
         for account in self.accounts:
             state = next((s for s in states if s.account == account), None)
-            accounts_status.append({
-                "account": account,
-                "last_sync": state.last_sync_at.isoformat() if state and state.last_sync_at else None,
-                "raw_tweets": raw_counts.get(account, 0),  # From actual database
-                "days_fetched": journal_days.get(account, 0),  # From journal
-            })
+            accounts_status.append(
+                {
+                    "account": account,
+                    "last_sync": state.last_sync_at.isoformat() if state and state.last_sync_at else None,
+                    "raw_tweets": raw_counts.get(account, 0),  # From actual database
+                    "days_fetched": journal_days.get(account, 0),  # From journal
+                }
+            )
 
         return {
             "database": stats,
@@ -662,15 +660,18 @@ class SyncService:
             writer.writerow(["timestamp", "author", "ticker", "tweet_url", "category", "text"])
 
             for tweet in tweets:
-                writer.writerow([
-                    tweet.timestamp_et,
-                    tweet.author,
-                    tweet.ticker,
-                    tweet.tweet_url,
-                    tweet.category,
-                    tweet.text,
-                ])
+                # Apply FinBERT-optimized cleaning (Unicode normalization, emoji mapping)
+                cleaned_text = clean_for_finbert(tweet.text)
+                writer.writerow(
+                    [
+                        tweet.timestamp_et,
+                        tweet.author,
+                        tweet.ticker,
+                        tweet.tweet_url,
+                        tweet.category,
+                        cleaned_text,
+                    ]
+                )
 
         logger.info(f"Exported {len(tweets)} tweets to {output_path}")
         return len(tweets)
-

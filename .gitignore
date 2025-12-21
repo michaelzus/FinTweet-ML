@@ -45,16 +45,29 @@ htmlcov/
 dmypy.json
 
 # Project specific - output files
-output/*.csv
-output/*.feather
+output/*
+!output/.gitkeep
 
 # Input files (Discord exports - keep structure, ignore content)
 input/discord/*.txt
 
 # Data cache directories (persistent disk cache for OHLCV data)
-data/daily/
-data/intraday/
+data/daily/*
+data/intraday/*
 data/intraday_stop/
+!data/daily/.gitkeep
+!data/intraday/.gitkeep
+
+# Database files
+*.db
+data/tweets.db
+
+# Data metadata (can be regenerated)
+data/*.json
+!data/.gitkeep
+
+# Personal files
+TODO_MICHAEL.MD
 # Test outputs
 *_test.csv
 *_new.csv

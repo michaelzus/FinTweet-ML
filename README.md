@@ -1,15 +1,17 @@
-# TimeWaste2 - Financial Data Pipeline
+# FinTweet-ML
 
-Complete automated pipeline for collecting, filtering, and processing financial market data from multiple sources.
+ML pipeline for enriching financial tweets with market data and sentiment classification.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![IBKR](https://img.shields.io/badge/IBKR-TWS%2FGateway-green.svg)](https://www.interactivebrokers.com/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![FinBERT](https://img.shields.io/badge/Model-FinBERT-green.svg)](https://huggingface.co/ProsusAI/finbert)
+[![IBKR](https://img.shields.io/badge/IBKR-TWS%2FGateway-orange.svg)](https://www.interactivebrokers.com/)
 
 ---
 
 ## 🎯 What This Project Does
 
-**TimeWaste2** is a comprehensive data pipeline that:
+**FinTweet-ML** is a comprehensive ML data pipeline that:
 
 1. 📊 **Fetches historical OHLCV data** from Interactive Brokers for S&P 500 / Russell 1000
 2. 🔍 **Filters tickers by volume** to identify liquid, tradeable stocks  
@@ -31,10 +33,10 @@ Complete automated pipeline for collecting, filtering, and processing financial 
 
 ```bash
 # Clone or navigate to project
-cd TimeWaste2
+cd FinTweet-ML
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Complete Pipeline Example
@@ -652,33 +654,32 @@ print(f"Wrote {stats['written']} messages")
 ## 📁 Project Structure
 
 ```
-TimeWaste2/
-├── 🔧 CORE SCRIPTS
-│   ├── fetch_historical_data.py   # IBKR historical data fetcher
-│   ├── filter_by_volume.py        # Volume-based ticker filter
-│   ├── discord_to_csv.py          # Discord message converter
-│   ├── ib_fetcher.py              # IBKR async API wrapper
-│   ├── helpers.py                 # Shared utilities
-│   └── test_timezone.py           # Timezone conversion tests
+FinTweet-ML/
+├── src/
+│   ├── tweet_enricher/           # Core enrichment pipeline
+│   │   ├── core/                 # Business logic (enricher, indicators)
+│   │   ├── data/                 # Data fetching (IBKR, cache)
+│   │   ├── parsers/              # Input parsing (Discord)
+│   │   ├── io/                   # File I/O (CSV, Feather)
+│   │   ├── market/               # Market session utilities
+│   │   └── twitter/              # Twitter API client
+│   └── tweet_classifier/         # FinBERT sentiment classifier
 │
-├── 📊 DATA
-│   ├── discrod_data/              # Input: Discord exports
-│   │   └── AI_INVEST_ISRAEL.txt
-│   ├── data/                      # Historical OHLCV data
-│   │   ├── AAPL.csv
-│   │   ├── MSFT.csv
-│   │   └── ... (1000+ files)
-│   ├── high_volume.csv            # Filtered ticker list (1M+ vol)
-│   ├── 1M_volume.csv              # Alternative filter
-│   └── output/                    # Processed Discord messages
-│       └── discord_messages.csv
+├── scripts/                      # Utility scripts
+├── notebooks/                    # Jupyter notebooks
+├── tests/                        # Test suite
+├── docs/                         # Documentation
+│   ├── ARCHITECTURE.md           # System architecture
+│   ├── ENRICHMENT_DEMO.md        # Enrichment examples
+│   └── TWITTER_FETCH.md          # Twitter API docs
 │
-├── 📚 DOCUMENTATION
-│   └── README.md                  # This file
+├── data/                         # Data cache (gitignored)
+│   ├── daily/                    # Daily OHLCV cache
+│   └── intraday/                 # Intraday cache
 │
-└── ⚙️ CONFIGURATION
-    ├── requirements.txt           # Python dependencies
-    └── .gitignore                # Git ignore rules
+├── pyproject.toml                # Project configuration
+├── ROADMAP.md                    # Future improvements
+└── README.md                     # This file
 ```
 
 ---

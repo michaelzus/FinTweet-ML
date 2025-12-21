@@ -146,15 +146,17 @@ def get_date_ranges(
         test_start = dates[i + train_days + val_days]
         test_end = dates[i + total_days - 1]
 
-        windows.append({
-            "window": window_num,
-            "train_start": train_start,
-            "train_end": train_end,
-            "val_start": val_start,
-            "val_end": val_end,
-            "test_start": test_start,
-            "test_end": test_end,
-        })
+        windows.append(
+            {
+                "window": window_num,
+                "train_start": train_start,
+                "train_end": train_end,
+                "val_start": val_start,
+                "val_end": val_end,
+                "test_start": test_start,
+                "test_end": test_end,
+            }
+        )
 
         i += slide_days
         window_num += 1
@@ -248,8 +250,7 @@ def compute_trading_metrics(
     if high_conf_mask.sum() > 0:
         high_conf_preds = valid_predictions[high_conf_mask]
         high_conf_returns = valid_returns[high_conf_mask]
-        correct = ((high_conf_preds == 2) & (high_conf_returns > 0)) | \
-                  ((high_conf_preds == 0) & (high_conf_returns < 0))
+        correct = ((high_conf_preds == 2) & (high_conf_returns > 0)) | ((high_conf_preds == 0) & (high_conf_returns < 0))
         precision_at_conf = correct.mean()
         n_high_conf = high_conf_mask.sum()
     else:
@@ -508,8 +509,13 @@ def main():
         # Train and evaluate
         try:
             results = train_and_evaluate_window(
-                df_train, df_val, df_test,
-                window_info, output_dir, args, device,
+                df_train,
+                df_val,
+                df_test,
+                window_info,
+                output_dir,
+                args,
+                device,
             )
             all_results.append(results)
 
@@ -528,6 +534,7 @@ def main():
         except Exception as e:
             logger.error(f"Error in window {window_num}: {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
@@ -574,7 +581,7 @@ def _save_summary(all_results: List[Dict], args: argparse.Namespace, summary_pat
             "val_days": args.val_days,
             "test_days": args.test_days,
             "slide_days": args.slide_days,
-        }
+        },
     }
 
     with open(summary_path, "w") as f:
@@ -604,8 +611,12 @@ def _print_summary(all_results: List[Dict]) -> None:
     # Best and worst windows
     best_ic_window = max(all_results, key=lambda x: x.get("information_coefficient", -999))
     worst_ic_window = min(all_results, key=lambda x: x.get("information_coefficient", 999))
-    logger.info(f"\nBest IC window: {best_ic_window['window']} (IC={best_ic_window.get('information_coefficient', 0):.4f}, test: {best_ic_window['test_start']} to {best_ic_window['test_end']})")
-    logger.info(f"Worst IC window: {worst_ic_window['window']} (IC={worst_ic_window.get('information_coefficient', 0):.4f}, test: {worst_ic_window['test_start']} to {worst_ic_window['test_end']})")
+    logger.info(
+        f"\nBest IC window: {best_ic_window['window']} (IC={best_ic_window.get('information_coefficient', 0):.4f}, test: {best_ic_window['test_start']} to {best_ic_window['test_end']})"
+    )
+    logger.info(
+        f"Worst IC window: {worst_ic_window['window']} (IC={worst_ic_window.get('information_coefficient', 0):.4f}, test: {worst_ic_window['test_start']} to {worst_ic_window['test_end']})"
+    )
 
 
 if __name__ == "__main__":

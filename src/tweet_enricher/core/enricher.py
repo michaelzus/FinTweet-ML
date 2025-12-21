@@ -119,10 +119,7 @@ class TweetEnricher:
                     bar_time = entry_bar.name
                     price = entry_bar["open"]
                     delay = bar_time - timestamp
-                    self.logger.debug(
-                        f"entry_price: ${price:.2f} at {bar_time} open "
-                        f"(tweet: {timestamp}, delay: {delay})"
-                    )
+                    self.logger.debug(f"entry_price: ${price:.2f} at {bar_time} open " f"(tweet: {timestamp}, delay: {delay})")
                     return price, f"{session.value}_next_bar_open"
 
             # Fallback to next day's open
@@ -326,9 +323,7 @@ class TweetEnricher:
         session = get_market_session(timestamp)
 
         # Get entry price (first available price AFTER tweet - realistic execution)
-        entry_price, entry_price_flag = self.get_entry_price(
-            intraday_df, daily_df_for_next_open, timestamp, session
-        )
+        entry_price, entry_price_flag = self.get_entry_price(intraday_df, daily_df_for_next_open, timestamp, session)
 
         # Find closest daily bar for indicator calculation
         tweet_date = timestamp.date()
@@ -380,9 +375,7 @@ class TweetEnricher:
         tweet_hash = self._compute_tweet_hash(tweet_row["text"])
 
         # Get next trading day's open price for 1-day labels
-        price_next_open, price_next_open_flag = self.get_price_next_open(
-            daily_df_for_next_open, timestamp
-        )
+        price_next_open, price_next_open_flag = self.get_price_next_open(daily_df_for_next_open, timestamp)
 
         # Calculate return to next open (using entry price as base)
         return_to_next_open = None

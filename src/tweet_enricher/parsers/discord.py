@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from tweet_enricher.config import EXCLUDED_TICKERS
+from tweet_enricher.text.cleaner import clean_for_finbert
 
 
 class MessageCategorizer:
@@ -321,9 +322,9 @@ class MessageProcessor:
             text: Raw message text
 
         Returns:
-            Cleaned text
+            Cleaned text optimized for FinBERT processing
         """
-        # Remove noise patterns
+        # Remove Discord-specific noise patterns
         clean = re.sub(r"\{Embed\}", "", text)
         clean = re.sub(r"\{Attachments\}", "", clean)
         clean = re.sub(r"https?://[^\s]+", "", clean)
@@ -341,6 +342,9 @@ class MessageProcessor:
 
         # Replace newlines with spaces for CSV
         clean = " ".join(clean.split("\n"))
+
+        # Apply FinBERT-optimized cleaning (Unicode normalization, emoji mapping, etc.)
+        clean = clean_for_finbert(clean)
 
         return clean
 
@@ -393,7 +397,7 @@ class MessageProcessor:
 
             # Check if character is in Latin script (Basic Latin + Latin Extended)
             # Include U+00AA (ª) and U+00BA (º) from Latin-1 Supplement
-            if ("\u0041" <= char <= "\u007A") or ("\u00C0" <= char <= "\u024F") or char in "\u00aa\u00ba":
+            if ("\u0041" <= char <= "\u007a") or ("\u00c0" <= char <= "\u024f") or char in "\u00aa\u00ba":
                 latin_count += 1
             else:
                 non_latin_count += 1

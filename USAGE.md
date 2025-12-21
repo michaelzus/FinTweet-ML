@@ -157,3 +157,8 @@ cd /Users/mzus/dev/TimeWaste && source .venv/bin/activate && echo "Training full
     --output-dir models/full-phase1-2 \
     --epochs 5 \
     --batch-size 16 2>&1 | tee /tmp/phase1_2_full_training.log | tail -100
+
+
+
+
+cd /Users/mzus/dev/TimeWaste && source venv/bin/activate && tweet-enricher twitter export -o output/tweets_2025_export.csv --since 2025-01-01 --until 2025-12-31 -v

@@ -5,7 +5,7 @@ averaging their predictions to reduce variance and improve stability.
 
 Usage:
     from tweet_classifier.ensemble import load_ensemble, ensemble_predict
-    
+
     models = load_ensemble(["models/run-1/final", "models/run-3/final"])
     avg_probs = ensemble_predict(models, batch)
 """
@@ -73,7 +73,9 @@ def load_ensemble(
             continue
 
         logger.info(f"Loading model {i + 1}/{len(model_dirs)}: {model_dir}")
-        model, model_scaler, model_encodings = load_model_for_evaluation(model_path, device)
+        model, model_scaler, model_encodings = load_model_for_evaluation(
+            model_path, device
+        )
         models.append(model)
 
         # Use scaler and encodings from first model
@@ -151,7 +153,9 @@ def evaluate_ensemble(
     if device is None:
         device = next(models[0].parameters()).device
 
-    dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    dataloader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False
+    )
 
     all_predictions = []
     all_probabilities = []
@@ -223,8 +227,13 @@ def compute_ensemble_trading_metrics(
         actual_direction = np.sign(valid_returns[non_hold_mask])
         non_zero_returns = actual_direction != 0
         if non_zero_returns.sum() > 0:
-            directional_correct = (predicted_direction[non_zero_returns] == actual_direction[non_zero_returns]).sum()
-            results["directional_accuracy"] = float(directional_correct / non_zero_returns.sum())
+            directional_correct = (
+                predicted_direction[non_zero_returns]
+                == actual_direction[non_zero_returns]
+            ).sum()
+            results["directional_accuracy"] = float(
+                directional_correct / non_zero_returns.sum()
+            )
             results["n_directional_predictions"] = int(non_zero_returns.sum())
         else:
             results["directional_accuracy"] = 0.0
@@ -261,6 +270,3 @@ def compute_ensemble_trading_metrics(
     results["n_top_trades"] = n_top
 
     return results
-
-
-

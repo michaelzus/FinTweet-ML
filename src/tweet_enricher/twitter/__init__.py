@@ -5,4 +5,3 @@ from tweet_enricher.twitter.database import TweetDatabase
 from tweet_enricher.twitter.sync import SyncService
 
 __all__ = ["TwitterClient", "TweetDatabase", "SyncService"]
-

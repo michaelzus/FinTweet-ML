@@ -23,7 +23,12 @@ import seaborn as sns
 import torch
 import torch.nn.functional as F
 from scipy.stats import spearmanr
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+)
 from transformers import BertTokenizer
 
 from tweet_classifier.config import (
@@ -37,7 +42,10 @@ from tweet_classifier.config import (
 )
 from tweet_classifier.data.loader import filter_reliable, load_enriched_data
 from tweet_classifier.data.splitter import split_by_hash
-from tweet_classifier.dataset import create_dataset_from_df, load_preprocessing_artifacts
+from tweet_classifier.dataset import (
+    create_dataset_from_df,
+    load_preprocessing_artifacts,
+)
 from tweet_classifier.model import FinBERTMultiModal
 
 logging.basicConfig(
@@ -108,7 +116,9 @@ def load_model_for_evaluation(
         weights_path = model_dir / "model.safetensors"
     if not weights_path.exists():
         # Try loading via HuggingFace method
-        state_dict_path = list(model_dir.glob("*.bin")) + list(model_dir.glob("*.safetensors"))
+        state_dict_path = list(model_dir.glob("*.bin")) + list(
+            model_dir.glob("*.safetensors")
+        )
         if state_dict_path:
             weights_path = state_dict_path[0]
         else:
@@ -117,6 +127,7 @@ def load_model_for_evaluation(
     # Load state dict based on file format
     if weights_path.suffix == ".safetensors":
         from safetensors.torch import load_file
+
         state_dict = load_file(weights_path, device=str(device))
     else:
         # Use weights_only=True for security - only load tensors, not arbitrary Python objects
@@ -155,7 +166,9 @@ def evaluate_on_test(
         device = next(model.parameters()).device
 
     model.eval()
-    dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    dataloader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False
+    )
 
     all_predictions = []
     all_probabilities = []
@@ -328,8 +341,13 @@ def compute_trading_metrics(
         # Count correct direction (excluding zero returns)
         non_zero_returns = actual_direction != 0
         if non_zero_returns.sum() > 0:
-            directional_correct = (predicted_direction[non_zero_returns] == actual_direction[non_zero_returns]).sum()
-            results["directional_accuracy"] = float(directional_correct / non_zero_returns.sum())
+            directional_correct = (
+                predicted_direction[non_zero_returns]
+                == actual_direction[non_zero_returns]
+            ).sum()
+            results["directional_accuracy"] = float(
+                directional_correct / non_zero_returns.sum()
+            )
             results["n_directional_predictions"] = int(non_zero_returns.sum())
         else:
             results["directional_accuracy"] = 0.0
@@ -471,14 +489,18 @@ def run_full_evaluation(
     # 2. Classification report
     logger.info("\n" + "=" * 50)
     logger.info("Classification Report:")
-    report = generate_classification_report(eval_results["labels"], eval_results["predictions"])
+    report = generate_classification_report(
+        eval_results["labels"], eval_results["predictions"]
+    )
     logger.info("\n" + report)
     results["classification_report"] = report
 
     # 3. Confusion matrix
     if output_dir is not None:
         cm_path = output_dir / "confusion_matrix.png"
-        plot_confusion_matrix(eval_results["labels"], eval_results["predictions"], cm_path)
+        plot_confusion_matrix(
+            eval_results["labels"], eval_results["predictions"], cm_path
+        )
         results["confusion_matrix_path"] = str(cm_path)
 
     # 4. Trading metrics
@@ -495,14 +517,24 @@ def run_full_evaluation(
         )
         results["trading_metrics"] = trading_metrics
 
-        logger.info(f"Information Coefficient: {trading_metrics['information_coefficient']:.4f} "
-                    f"(p={trading_metrics['ic_pvalue']:.4f})")
-        logger.info(f"Directional Accuracy: {trading_metrics.get('directional_accuracy', 0):.2%}")
-        logger.info(f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top']:.2f}")
-        logger.info(f"Annualized Return (top 30%): {trading_metrics['simulated_return_top']:.2%}")
+        logger.info(
+            f"Information Coefficient: {trading_metrics['information_coefficient']:.4f} "
+            f"(p={trading_metrics['ic_pvalue']:.4f})"
+        )
+        logger.info(
+            f"Directional Accuracy: {trading_metrics.get('directional_accuracy', 0):.2%}"
+        )
+        logger.info(
+            f"Simulated Sharpe (top 30%): {trading_metrics['simulated_sharpe_top']:.2f}"
+        )
+        logger.info(
+            f"Annualized Return (top 30%): {trading_metrics['simulated_return_top']:.2%}"
+        )
         if trading_metrics.get("precision_at_confidence") is not None:
-            logger.info(f"Precision @ 60% conf: {trading_metrics['precision_at_confidence']:.2%} "
-                        f"(n={trading_metrics['n_high_confidence']})")
+            logger.info(
+                f"Precision @ 60% conf: {trading_metrics['precision_at_confidence']:.2%} "
+                f"(n={trading_metrics['n_high_confidence']})"
+            )
     else:
         logger.warning(f"Column '{return_col}' not found, skipping trading metrics")
         results["trading_metrics"] = {}
@@ -515,13 +547,19 @@ def run_full_evaluation(
     results["baselines"] = baselines
 
     logger.info(f"Model Accuracy:      {results['accuracy']:.2%}")
-    logger.info(f"Naive ({baselines['majority_class']}):  {baselines['naive_accuracy']:.2%}")
+    logger.info(
+        f"Naive ({baselines['majority_class']}):  {baselines['naive_accuracy']:.2%}"
+    )
     logger.info(f"Random:              {baselines['random_accuracy']:.2%}")
     logger.info(f"Weighted Random:     {baselines['weighted_random_accuracy']:.2%}")
 
     # Improvement metrics
-    improvement_vs_naive = (results["accuracy"] - baselines["naive_accuracy"]) / baselines["naive_accuracy"]
-    improvement_vs_random = (results["accuracy"] - baselines["random_accuracy"]) / baselines["random_accuracy"]
+    improvement_vs_naive = (
+        results["accuracy"] - baselines["naive_accuracy"]
+    ) / baselines["naive_accuracy"]
+    improvement_vs_random = (
+        results["accuracy"] - baselines["random_accuracy"]
+    ) / baselines["random_accuracy"]
     results["improvement_vs_naive"] = improvement_vs_naive
     results["improvement_vs_random"] = improvement_vs_random
 
@@ -676,4 +714,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

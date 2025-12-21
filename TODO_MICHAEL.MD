@@ -1,2 +1,0 @@
-FETCH to work incremental.
-

@@ -144,10 +144,7 @@ class StockMetadataCache:
             market_cap_bucket = self._classify_market_cap(market_cap)
 
             cap_str = f"(${market_cap / 1e9:.1f}B)" if market_cap else "(market_cap=None)"
-            logger.info(
-                f"{ticker}: sector={sector} (raw: {raw_sector}), "
-                f"market_cap_bucket={market_cap_bucket} {cap_str}"
-            )
+            logger.info(f"{ticker}: sector={sector} (raw: {raw_sector}), " f"market_cap_bucket={market_cap_bucket} {cap_str}")
 
             return {"sector": sector, "market_cap_bucket": market_cap_bucket}
 
@@ -201,4 +198,3 @@ class StockMetadataCache:
             self.get_metadata(ticker)
 
         logger.info(f"Prefetch complete. Total cached: {len(self._cache)}")
-

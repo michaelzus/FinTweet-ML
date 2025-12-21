@@ -2,7 +2,7 @@
 
 This script implements rolling window training and evaluation:
 - Train on 4 months
-- Validate on 1 month  
+- Validate on 1 month
 - Test on 1 month
 - Slide window forward by 1 month
 
@@ -79,7 +79,9 @@ def get_windows(start_month: int = 1, end_month: int = 12, train_months: int = 4
     return windows
 
 
-def split_by_month(df: pd.DataFrame, train_months: List[int], val_month: int, test_month: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def split_by_month(
+    df: pd.DataFrame, train_months: List[int], val_month: int, test_month: int
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Split DataFrame by month.
 
     Args:
@@ -136,7 +138,8 @@ def train_and_evaluate_window(
 
     # Create datasets
     train_dataset, scaler = create_dataset_from_df(
-        df_train, tokenizer,
+        df_train,
+        tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
         encodings["market_regime_to_idx"],
@@ -146,7 +149,8 @@ def train_and_evaluate_window(
     )
 
     val_dataset, _ = create_dataset_from_df(
-        df_val, tokenizer,
+        df_val,
+        tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
         encodings["market_regime_to_idx"],
@@ -157,7 +161,8 @@ def train_and_evaluate_window(
     )
 
     test_dataset, _ = create_dataset_from_df(
-        df_test, tokenizer,
+        df_test,
+        tokenizer,
         encodings["author_to_idx"],
         encodings["category_to_idx"],
         encodings["market_regime_to_idx"],
@@ -298,7 +303,9 @@ def run_walk_forward(
     for i, (train_months_list, val_month, test_month) in enumerate(windows):
         window_name = f"window_{i+1}_train_{train_months_list[0]:02d}-{train_months_list[-1]:02d}_test_{test_month:02d}"
         logger.info(f"\n{'='*60}")
-        logger.info(f"Window {i+1}/{len(windows)}: Train [{train_months_list[0]:02d}-{train_months_list[-1]:02d}], Val [{val_month:02d}], Test [{test_month:02d}]")
+        logger.info(
+            f"Window {i+1}/{len(windows)}: Train [{train_months_list[0]:02d}-{train_months_list[-1]:02d}], Val [{val_month:02d}], Test [{test_month:02d}]"
+        )
         logger.info(f"{'='*60}")
 
         # Split data
@@ -415,4 +422,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

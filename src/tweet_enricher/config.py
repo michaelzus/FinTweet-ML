@@ -59,8 +59,8 @@ DEFAULT_BATCH_SIZE = 50
 DEFAULT_BATCH_DELAY = 2.0
 
 # Intraday fetch settings
-INTRADAY_TOTAL_DAYS = 200       # Total days of intraday history to fetch
-INTRADAY_FETCH_DELAY = 2.0      # Seconds between symbol requests
+INTRADAY_TOTAL_DAYS = 200  # Total days of intraday history to fetch
+INTRADAY_FETCH_DELAY = 2.0  # Seconds between symbol requests
 
 # Market regime classification thresholds
 REGIME_TRENDING_THRESHOLD = 0.02  # ±2% weekly return = trending

@@ -285,4 +285,3 @@ class TechnicalIndicators:
         }
 
         return indicators
-

@@ -120,4 +120,3 @@ def load_intraday_data(symbol: str, data_dir: Path) -> Optional[pd.DataFrame]:
     except Exception as e:
         logger.warning(f"Failed to load intraday cache for {symbol}: {e}")
         return None
-

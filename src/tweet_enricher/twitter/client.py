@@ -52,10 +52,7 @@ class TwitterClient:
         self._last_request_time: Optional[float] = None
 
         if not self.api_key:
-            raise ValueError(
-                "Twitter API key not provided. Set TWITTER_API_KEY environment variable "
-                "or pass api_key parameter."
-            )
+            raise ValueError("Twitter API key not provided. Set TWITTER_API_KEY environment variable " "or pass api_key parameter.")
 
     def _wait_for_rate_limit(self) -> None:
         """Enforce rate limiting between requests."""
@@ -102,10 +99,10 @@ class TwitterClient:
     def _parse_tweet_timestamp(self, timestamp_str: str) -> Optional[datetime]:
         """
         Parse Twitter timestamp string to datetime.
-        
+
         Args:
             timestamp_str: Twitter format "Wed Dec 17 15:01:11 +0000 2025"
-            
+
         Returns:
             datetime object (timezone-aware UTC) or None if parsing fails
         """
@@ -190,7 +187,7 @@ class TwitterClient:
     ) -> tuple[list[Tweet], int, Optional[str]]:
         """
         Fetch tweets incrementally, stopping as soon as we hit existing data or target date.
-        
+
         This is cost-optimized: stops pagination immediately when reaching
         tweets we already have or when tweets are older than until_date.
 
@@ -231,7 +228,7 @@ class TwitterClient:
             # Process tweets until we hit existing data or target date
             found_existing = False
             reached_target_date = False
-            
+
             for tweet in tweets:
                 # Check if tweet is older than target date
                 if until_date:
@@ -263,12 +260,14 @@ class TwitterClient:
                 # Progress callback
                 if progress_callback:
                     tweet_dt = self._parse_tweet_timestamp(tweet.created_at)
-                    progress_callback({
-                        "tweets_fetched": len(new_tweets),
-                        "api_calls": api_calls,
-                        "current_date": tweet_dt.strftime("%Y-%m-%d") if tweet_dt else "unknown",
-                        "skipped_existing": skipped_existing,
-                    })
+                    progress_callback(
+                        {
+                            "tweets_fetched": len(new_tweets),
+                            "api_calls": api_calls,
+                            "current_date": tweet_dt.strftime("%Y-%m-%d") if tweet_dt else "unknown",
+                            "skipped_existing": skipped_existing,
+                        }
+                    )
 
                 # Stop if we've reached max tweets
                 if max_tweets and len(new_tweets) >= max_tweets:
@@ -299,7 +298,7 @@ class TwitterClient:
     ) -> Iterator[Tweet]:
         """
         Fetch all tweets for a user with pagination.
-        
+
         Note: For incremental sync with cost optimization, use fetch_tweets_incremental().
 
         Args:
@@ -351,7 +350,7 @@ class TwitterClient:
     ) -> tuple[list[Tweet], Optional[str], bool]:
         """
         Search tweets for a user within a specific date range.
-        
+
         Uses the advanced_search endpoint with Twitter search syntax.
 
         Args:
@@ -364,11 +363,12 @@ class TwitterClient:
             Tuple of (tweets, next_cursor, has_next_page)
         """
         import time as _time
+
         start = _time.time()
-        
+
         # Build Twitter search query with date filters
         query = f"from:{username} since:{since_date} until:{until_date}"
-        
+
         params: dict[str, Any] = {
             "query": query,
             "queryType": "Latest",
@@ -384,7 +384,7 @@ class TwitterClient:
             tweets_data = data.get("tweets", [])
             if not tweets_data:
                 tweets_data = data.get("data", {}).get("tweets", [])
-            
+
             tweets = [self._parse_tweet(t) for t in tweets_data]
 
             next_cursor = data.get("next_cursor")
@@ -423,7 +423,7 @@ class TwitterClient:
         new_tweets: list[Tweet] = []
         api_calls = 0
         skipped = 0
-        
+
         while True:
             tweets, next_cursor, has_next_page = self.search_tweets_by_date(
                 username=username,
@@ -432,25 +432,25 @@ class TwitterClient:
                 cursor=cursor,
             )
             api_calls += 1
-            
+
             if not tweets:
                 break
-            
+
             for tweet in tweets:
                 if exists_check(tweet.id):
                     skipped += 1
                     continue
-                
+
                 if save_callback:
                     save_callback(tweet)
-                
+
                 new_tweets.append(tweet)
-            
+
             if not has_next_page or not next_cursor:
                 break
-            
+
             cursor = next_cursor
-        
+
         return new_tweets, api_calls, skipped
 
     def test_connection(self) -> bool:
@@ -466,4 +466,3 @@ class TwitterClient:
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
             return False
-

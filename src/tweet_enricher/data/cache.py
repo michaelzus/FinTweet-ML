@@ -313,8 +313,7 @@ class DataCache:
                     incremental_info[symbol] = (cached_df, days_missing)
 
         self.logger.info(
-            f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_full_fetch)} full fetch, "
-            f"{len(needs_incremental)} incremental"
+            f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_full_fetch)} full fetch, " f"{len(needs_incremental)} incremental"
         )
 
         # ========== PHASE 2: Fetch full data ==========
@@ -346,9 +345,7 @@ class DataCache:
             max_days_missing = max(info[1] for info in incremental_info.values())
             incremental_days = max_days_missing + 5  # +5 days safety buffer
 
-            self.logger.info(
-                f"  Phase 3: Fetching {len(needs_incremental)} incremental updates ({incremental_days} days each)..."
-            )
+            self.logger.info(f"  Phase 3: Fetching {len(needs_incremental)} incremental updates ({incremental_days} days each)...")
 
             def save_symbol_incremental(symbol: str, df: pd.DataFrame) -> None:
                 nonlocal updated_incremental, loaded_from_cache
@@ -526,6 +523,7 @@ class DataCache:
             # Delay between symbols
             if i < len(needs_backfill) - 1:
                 import asyncio
+
                 await asyncio.sleep(delay_between_symbols)
 
         # Summary

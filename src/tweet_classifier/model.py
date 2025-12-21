@@ -110,11 +110,15 @@ class FinBERTMultiModal(nn.Module):
         # Categorical embeddings (to reduce author bias)
         self.author_embedding = nn.Embedding(num_authors, author_embedding_dim)
         self.category_embedding = nn.Embedding(num_categories, category_embedding_dim)
-        
+
         # Phase 1: Context embeddings
-        self.market_regime_embedding = nn.Embedding(num_market_regimes, market_regime_embedding_dim)
+        self.market_regime_embedding = nn.Embedding(
+            num_market_regimes, market_regime_embedding_dim
+        )
         self.sector_embedding = nn.Embedding(num_sectors, sector_embedding_dim)
-        self.market_cap_embedding = nn.Embedding(num_market_caps, market_cap_embedding_dim)
+        self.market_cap_embedding = nn.Embedding(
+            num_market_caps, market_cap_embedding_dim
+        )
 
         # Numerical feature encoder
         self.numerical_encoder = nn.Sequential(
@@ -186,7 +190,7 @@ class FinBERTMultiModal(nn.Module):
         # Encode categorical features
         author_emb = self.author_embedding(author_idx)  # [batch, 16]
         category_emb = self.category_embedding(category_idx)  # [batch, 8]
-        
+
         # Phase 1: Encode context features
         regime_emb = self.market_regime_embedding(market_regime_idx)  # [batch, 4]
         sector_emb = self.sector_embedding(sector_idx)  # [batch, 8]
@@ -194,7 +198,16 @@ class FinBERTMultiModal(nn.Module):
 
         # Fusion
         combined = torch.cat(
-            [cls_embedding, num_embedding, author_emb, category_emb, regime_emb, sector_emb, market_cap_emb], dim=1
+            [
+                cls_embedding,
+                num_embedding,
+                author_emb,
+                category_emb,
+                regime_emb,
+                sector_emb,
+                market_cap_emb,
+            ],
+            dim=1,
         )
 
         # Classification
@@ -232,4 +245,3 @@ class FinBERTMultiModal(nn.Module):
             "market_cap_embedding_dim": self.market_cap_embedding_dim,
             "numerical_hidden_dim": self.numerical_hidden_dim,
         }
-

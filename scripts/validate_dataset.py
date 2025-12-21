@@ -265,10 +265,7 @@ def validate_tweet_stock_alignment(sample_size: int = 20, ticker_filter: Optiona
             if len(future_bars) > 0:
                 next_bar = future_bars.iloc[0]
                 delay = next_bar.name - tweet_ts_et
-                print(
-                    f"  ✓ {ticker} @ {et_str[:16]} ({session.value}): "
-                    f"Next bar at {next_bar.name.strftime('%H:%M')} (delay: {delay})"
-                )
+                print(f"  ✓ {ticker} @ {et_str[:16]} ({session.value}): " f"Next bar at {next_bar.name.strftime('%H:%M')} (delay: {delay})")
                 valid_count += 1
             else:
                 print(f"  ? {ticker} @ {et_str}: No future bars found (may be recent tweet)")

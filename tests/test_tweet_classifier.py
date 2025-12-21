@@ -606,12 +606,14 @@ class TestComputeMetrics:
         from tweet_classifier.trainer import compute_metrics
 
         # Create sample predictions and labels
-        predictions = np.array([
-            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
-            [0.1, 0.8, 0.1],   # Predict HOLD (class 1)
-            [0.1, 0.1, 0.8],   # Predict BUY (class 2)
-            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
-        ])
+        predictions = np.array(
+            [
+                [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+                [0.1, 0.8, 0.1],  # Predict HOLD (class 1)
+                [0.1, 0.1, 0.8],  # Predict BUY (class 2)
+                [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+            ]
+        )
         labels = np.array([0, 1, 2, 0])  # All correct
 
         metrics = compute_metrics((predictions, labels))
@@ -624,11 +626,13 @@ class TestComputeMetrics:
         """Test compute_metrics with perfect predictions."""
         from tweet_classifier.trainer import compute_metrics
 
-        predictions = np.array([
-            [0.9, 0.05, 0.05],
-            [0.1, 0.8, 0.1],
-            [0.1, 0.1, 0.8],
-        ])
+        predictions = np.array(
+            [
+                [0.9, 0.05, 0.05],
+                [0.1, 0.8, 0.1],
+                [0.1, 0.1, 0.8],
+            ]
+        )
         labels = np.array([0, 1, 2])
 
         metrics = compute_metrics((predictions, labels))
@@ -641,11 +645,13 @@ class TestComputeMetrics:
         """Test compute_metrics with all wrong predictions."""
         from tweet_classifier.trainer import compute_metrics
 
-        predictions = np.array([
-            [0.1, 0.1, 0.8],   # Predict BUY (class 2)
-            [0.9, 0.05, 0.05],  # Predict SELL (class 0)
-            [0.1, 0.8, 0.1],   # Predict HOLD (class 1)
-        ])
+        predictions = np.array(
+            [
+                [0.1, 0.1, 0.8],  # Predict BUY (class 2)
+                [0.9, 0.05, 0.05],  # Predict SELL (class 0)
+                [0.1, 0.8, 0.1],  # Predict HOLD (class 1)
+            ]
+        )
         labels = np.array([0, 1, 2])  # All wrong
 
         metrics = compute_metrics((predictions, labels))
@@ -854,13 +860,15 @@ class TestComputeTradingMetrics:
         # Create predictions where BUY (2) always aligns with positive returns
         # and SELL (0) always aligns with negative returns
         predictions = np.array([2, 2, 0, 0, 1])  # BUY, BUY, SELL, SELL, HOLD
-        probabilities = np.array([
-            [0.1, 0.1, 0.8],  # High BUY confidence
-            [0.1, 0.1, 0.8],  # High BUY confidence
-            [0.8, 0.1, 0.1],  # High SELL confidence
-            [0.8, 0.1, 0.1],  # High SELL confidence
-            [0.1, 0.8, 0.1],  # High HOLD confidence
-        ])
+        probabilities = np.array(
+            [
+                [0.1, 0.1, 0.8],  # High BUY confidence
+                [0.1, 0.1, 0.8],  # High BUY confidence
+                [0.8, 0.1, 0.1],  # High SELL confidence
+                [0.8, 0.1, 0.1],  # High SELL confidence
+                [0.1, 0.8, 0.1],  # High HOLD confidence
+            ]
+        )
         actual_returns = np.array([0.03, 0.02, -0.02, -0.03, 0.01])  # Positive for BUY, negative for SELL
         labels = np.array([2, 2, 0, 0, 1])
 

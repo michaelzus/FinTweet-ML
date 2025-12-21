@@ -89,7 +89,9 @@ def prepare_features(df: pd.DataFrame) -> dict:
     # Safety check: ensure no forbidden columns in features
     for col in EXCLUDED_FROM_FEATURES:
         if col in NUMERICAL_FEATURES:
-            raise ValueError(f"LEAK: {col} found in NUMERICAL_FEATURES! This is future data.")
+            raise ValueError(
+                f"LEAK: {col} found in NUMERICAL_FEATURES! This is future data."
+            )
 
     # Extract features
     features = {
@@ -114,12 +116,21 @@ def get_data_summary(df: pd.DataFrame) -> dict:
     """
     summary = {
         "total_samples": len(df),
-        "reliable_samples": df["is_reliable_label"].sum() if "is_reliable_label" in df.columns else len(df),
-        "target_distribution": df[TARGET_COLUMN].value_counts().to_dict() if TARGET_COLUMN in df.columns else {},
-        "missing_target": df[TARGET_COLUMN].isna().sum() if TARGET_COLUMN in df.columns else 0,
+        "reliable_samples": (
+            df["is_reliable_label"].sum()
+            if "is_reliable_label" in df.columns
+            else len(df)
+        ),
+        "target_distribution": (
+            df[TARGET_COLUMN].value_counts().to_dict()
+            if TARGET_COLUMN in df.columns
+            else {}
+        ),
+        "missing_target": (
+            df[TARGET_COLUMN].isna().sum() if TARGET_COLUMN in df.columns else 0
+        ),
         "unique_authors": df["author"].nunique() if "author" in df.columns else 0,
         "unique_tickers": df["ticker"].nunique() if "ticker" in df.columns else 0,
     }
 
     return summary
-

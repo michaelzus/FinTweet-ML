@@ -216,4 +216,3 @@ def filter_tickers_by_volume(data_dir: str = str(DAILY_DATA_DIR), min_avg_volume
     except Exception as e:
         logger.error(f"Error filtering tickers by volume: {e}")
         raise
-

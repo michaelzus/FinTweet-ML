@@ -87,7 +87,7 @@ class TweetDataset(Dataset):
             sector_indices = sector_indices.values
         if isinstance(market_cap_indices, pd.Series):
             market_cap_indices = market_cap_indices.values
-            
+
         self.author_idx = torch.tensor(author_indices, dtype=torch.long)
         self.category_idx = torch.tensor(category_indices, dtype=torch.long)
         self.market_regime_idx = torch.tensor(market_regime_indices, dtype=torch.long)
@@ -225,9 +225,13 @@ def encode_categorical(
     if handle_unknown == "default":
         df["author_idx"] = df["author"].map(lambda x: author_to_idx.get(x, 0))
         df["category_idx"] = df["category"].map(lambda x: category_to_idx.get(x, 0))
-        df["market_regime_idx"] = df["market_regime"].map(lambda x: market_regime_to_idx.get(x, 0))
+        df["market_regime_idx"] = df["market_regime"].map(
+            lambda x: market_regime_to_idx.get(x, 0)
+        )
         df["sector_idx"] = df["sector"].map(lambda x: sector_to_idx.get(x, 0))
-        df["market_cap_idx"] = df["market_cap_bucket"].map(lambda x: market_cap_to_idx.get(x, 0))
+        df["market_cap_idx"] = df["market_cap_bucket"].map(
+            lambda x: market_cap_to_idx.get(x, 0)
+        )
     else:
         df["author_idx"] = df["author"].map(author_to_idx)
         df["category_idx"] = df["category"].map(category_to_idx)
@@ -275,7 +279,14 @@ def create_dataset_from_df(
     from sklearn.preprocessing import StandardScaler
 
     # Encode categorical features
-    df = encode_categorical(df, author_to_idx, category_to_idx, market_regime_to_idx, sector_to_idx, market_cap_to_idx)
+    df = encode_categorical(
+        df,
+        author_to_idx,
+        category_to_idx,
+        market_regime_to_idx,
+        sector_to_idx,
+        market_cap_to_idx,
+    )
 
     # Scale numerical features
     numerical = df[NUMERICAL_FEATURES].fillna(0).values
@@ -335,7 +346,9 @@ def load_scaler(path: Union[str, Path]) -> Any:
     return joblib.load(path)
 
 
-def save_categorical_encodings(encodings: Dict[str, Any], path: Union[str, Path]) -> None:
+def save_categorical_encodings(
+    encodings: Dict[str, Any], path: Union[str, Path]
+) -> None:
     """Save categorical encodings to disk using joblib.
 
     Args:

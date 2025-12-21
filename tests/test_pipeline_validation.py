@@ -221,9 +221,7 @@ class TestStockDataTimezone:
 
         # Check regular hours (9:30 AM - 4:00 PM)
         # Note: hour >= 10 ensures we're in regular hours (9:30 rounds to hour 9 but minute >= 30)
-        regular_bars = day_data[
-            ((day_data.index.hour == 9) & (day_data.index.minute >= 30)) | (day_data.index.hour >= 10)
-        ]
+        regular_bars = day_data[((day_data.index.hour == 9) & (day_data.index.minute >= 30)) | (day_data.index.hour >= 10)]
         regular_bars = regular_bars[regular_bars.index.hour < 16]
         assert len(regular_bars) > 0, f"Should have regular hours bars on {sample_date}"
 
@@ -321,9 +319,7 @@ class TestMarketSessionDetection:
 class TestTweetStockCrossReference:
     """Test cross-referencing between tweets and stock data."""
 
-    def test_tweet_timestamp_matches_stock_data_range(
-        self, sample_tweets: pd.DataFrame, intraday_data_dir: Path
-    ):
+    def test_tweet_timestamp_matches_stock_data_range(self, sample_tweets: pd.DataFrame, intraday_data_dir: Path):
         """Verify tweet timestamps fall within stock data range."""
         if sample_tweets.empty:
             pytest.skip("No sample tweets")
@@ -354,9 +350,7 @@ class TestTweetStockCrossReference:
 
         # The tweet date should be within a reasonable range of stock data
         # (tweets from the past year should have corresponding stock data)
-        assert tweet_date >= stock_min_date - timedelta(days=30), (
-            f"Tweet date {tweet_date} is before stock data starts {stock_min_date}"
-        )
+        assert tweet_date >= stock_min_date - timedelta(days=30), f"Tweet date {tweet_date} is before stock data starts {stock_min_date}"
 
     def test_normalize_timestamp_preserves_time(self):
         """Test that normalize_timestamp preserves the time correctly."""
@@ -405,9 +399,7 @@ class TestIncrementalFetching:
         conn = sqlite3.connect(tweet_db_path)
 
         # Check fetch_journal table exists
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='fetch_journal'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fetch_journal'")
         if cursor.fetchone() is None:
             conn.close()
             pytest.skip("fetch_journal table not found")
@@ -535,9 +527,7 @@ class TestEnrichmentOutput:
 
         # Sample timestamp should include timezone
         sample_ts = enriched_data.iloc[0]["timestamp"]
-        assert "-05:00" in str(sample_ts) or "-04:00" in str(sample_ts), (
-            f"Timestamp should include Eastern timezone offset: {sample_ts}"
-        )
+        assert "-05:00" in str(sample_ts) or "-04:00" in str(sample_ts), f"Timestamp should include Eastern timezone offset: {sample_ts}"
 
     def test_enriched_session_values_valid(self, enriched_data: Optional[pd.DataFrame]):
         """Test that session values are valid."""
@@ -619,9 +609,7 @@ def run_validation_summary():
         print(f"   ✓ Processed tweets: {processed_count:,}")
 
         # Sample timestamp check
-        sample = conn.execute(
-            "SELECT timestamp_utc, timestamp_et FROM tweets_processed LIMIT 1"
-        ).fetchone()
+        sample = conn.execute("SELECT timestamp_utc, timestamp_et FROM tweets_processed LIMIT 1").fetchone()
         if sample:
             print(f"   ✓ Sample UTC: {sample[0]}")
             print(f"   ✓ Sample ET:  {sample[1]}")

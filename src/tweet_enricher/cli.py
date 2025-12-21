@@ -382,6 +382,7 @@ async def _backfill_intraday(args: argparse.Namespace) -> int:
     elif args.all_cached:
         # Get all symbols from existing intraday cache
         from tweet_enricher.config import INTRADAY_CACHE_DIR
+
         intraday_dir = Path(INTRADAY_CACHE_DIR)
         if intraday_dir.exists():
             symbols = [f.stem for f in intraday_dir.glob("*.feather")]
@@ -481,8 +482,8 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
         sync_service = SyncService(accounts=accounts)
 
         # Handle estimate mode
-        months = getattr(args, 'months', None)
-        if getattr(args, 'estimate', False):
+        months = getattr(args, "months", None)
+        if getattr(args, "estimate", False):
             estimate = sync_service.estimate_backfill(months_back=months or 6)
             print("\n" + "=" * 60)
             print("BACKFILL ESTIMATE")
@@ -509,7 +510,7 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
         logger.info("Connection successful!")
 
         # Check for resume mode
-        resume = getattr(args, 'resume', False)
+        resume = getattr(args, "resume", False)
         show_progress = months is not None  # Show progress for historical backfill
 
         # Perform sync
@@ -524,7 +525,7 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
                 months_back=months,
                 show_progress=show_progress,
                 resume=resume,
-                use_date_search=getattr(args, 'date_search', False),
+                use_date_search=getattr(args, "date_search", False),
             )
             results = [result]
         else:
@@ -537,7 +538,7 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
                 months_back=months,
                 show_progress=show_progress,
                 resume=resume,
-                use_date_search=getattr(args, 'date_search', False),
+                use_date_search=getattr(args, "date_search", False),
             )
 
         # Print summary
@@ -888,4 +889,3 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
-

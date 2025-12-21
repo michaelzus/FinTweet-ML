@@ -1,6 +1,6 @@
-# TODO - Future Improvements
+# Roadmap - Future Improvements
 
-## 🎯 Prioritization
+## Prioritization
 
 - **P0** - Critical bugs or blockers
 - **P1** - Important improvements (post-POC)
@@ -9,7 +9,7 @@
 
 ---
 
-## 🏗️ Architecture Improvements
+## Architecture Improvements
 
 ### P1: Refactor Caching Layer
 **Status:** Deferred until multiple ML pipelines exist
@@ -46,7 +46,7 @@ class CachedDataFetcher:
 
 ---
 
-## 🚀 Performance Optimizations
+## Performance Optimizations
 
 ### P2: Batch Intraday Data Fetching
 **Status:** Not needed for POC
@@ -86,7 +86,7 @@ for i in range(0, len(tweets), batch_size):
 
 ---
 
-## 📊 Feature Engineering
+## Feature Engineering
 
 ### P1: Multi-Timeframe Returns
 **Status:** Infrastructure ready, not implemented
@@ -193,7 +193,7 @@ def extract_sentiment_signals(text: str) -> dict:
 
 ---
 
-## 🔧 Code Quality
+## Code Quality
 
 ### P2: Unit Tests
 **Status:** Not written yet
@@ -256,7 +256,7 @@ mypy enrich_tweets.py ib_fetcher.py technical_indicators.py --strict
 
 ---
 
-## 📈 Data Quality
+## Data Quality
 
 ### P1: Data Quality Monitoring
 **Status:** Basic flags exist, no monitoring
@@ -297,7 +297,7 @@ quality_report = {
 
 ---
 
-## 🗄️ Data Management
+## Data Management
 
 ### P2: Database Integration
 **Status:** Currently CSV-based
@@ -334,7 +334,7 @@ new_tweets = [t for t in tweets if t.id not in processed_ids]
 
 ---
 
-## 🔍 Monitoring & Observability
+## Monitoring & Observability
 
 ### P2: Structured Logging
 **Status:** Basic logging exists
@@ -368,7 +368,7 @@ new_tweets = [t for t in tweets if t.id not in processed_ids]
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 ### P2: API Documentation
 **Status:** Docstrings exist, no generated docs
@@ -396,7 +396,7 @@ new_tweets = [t for t in tweets if t.id not in processed_ids]
 
 ---
 
-## 🌐 Infrastructure
+## Infrastructure
 
 ### P3: Dockerization
 **Status:** Not containerized
@@ -433,7 +433,7 @@ CMD ["python", "enrich_tweets.py"]
 
 ---
 
-## 🎯 ML Pipeline Enhancements
+## ML Pipeline Enhancements
 
 ### P1: Model Training Pipeline
 **Status:** Not built yet
@@ -486,10 +486,10 @@ CMD ["python", "enrich_tweets.py"]
 
 ---
 
-## 🐛 Known Issues
+## Known Issues
 
 ### P0: None currently
-All critical bugs fixed! ✅
+All critical bugs fixed!
 
 ### P1: None currently
 
@@ -512,28 +512,9 @@ All critical bugs fixed! ✅
 
 ---
 
-## 📋 Decision Log
+## Research Topics
 
-### 2024-11-16: Caching Architecture
-**Decision:** Keep caching in `enrich_tweets.py` for now
-**Rationale:** POC stage, avoid over-engineering
-**Revisit:** When building 2nd ML pipeline
-
-### 2024-11-16: Look-Ahead Bias Fix
-**Decision:** Implemented date-aware caching
-**Impact:** Critical for ML model validity
-**Status:** ✅ Fixed
-
-### 2024-11-16: Generic Time Horizons
-**Decision:** Made `get_price_n_hr_after()` generic
-**Rationale:** Enables multi-timeframe analysis
-**Status:** ✅ Implemented
-
----
-
-## 🎓 Learning & Research
-
-### P2: Research Topics
+### P2: Research Areas
 - Alternative data sources (news, options flow, social sentiment)
 - Advanced ML techniques (transformers for time series)
 - Risk management strategies
@@ -544,18 +525,4 @@ All critical bugs fixed! ✅
 - How do other sentiment trading systems work?
 - What features do they use?
 - What are their edge cases?
-
----
-
-## Notes
-
-- **Focus on POC first** - Don't over-engineer before validating concept
-- **Iterate based on reality** - Let actual usage drive decisions
-- **Document but defer** - Capture ideas without immediate implementation
-- **Technical debt is okay** - If it's intentional and tracked
-
----
-
-**Last Updated:** 2024-11-16
-**Next Review:** After POC completion
 

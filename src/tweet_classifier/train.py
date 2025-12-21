@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 import torch
-from transformers import BertTokenizer, TrainingArguments
+from transformers import BertTokenizer, EarlyStoppingCallback, TrainingArguments
 
 from tweet_classifier.config import (
     DEFAULT_BATCH_SIZE,
@@ -41,7 +41,12 @@ from tweet_classifier.data.splitter import (
     split_by_time,
     verify_no_leakage,
 )
-from tweet_classifier.data.weights import compute_class_weights, get_weight_summary, weights_to_tensor
+from tweet_classifier.data.weights import (
+    apply_buy_boost,
+    compute_class_weights,
+    get_weight_summary,
+    weights_to_tensor,
+)
 from tweet_classifier.dataset import (
     create_categorical_encodings,
     create_dataset_from_df,
@@ -97,7 +102,8 @@ def create_training_args(
         save_strategy="epoch",
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size * 2,  # Larger batch for eval (no gradients)
+        per_device_eval_batch_size=batch_size
+        * 2,  # Larger batch for eval (no gradients)
         num_train_epochs=num_epochs,
         weight_decay=weight_decay,
         warmup_ratio=warmup_ratio,
@@ -123,6 +129,8 @@ def train(
     dropout: float = DEFAULT_DROPOUT,
     evaluate_test: bool = False,
     temporal_split: bool = False,
+    early_stopping_patience: int = 2,
+    buy_weight_boost: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     """Train the FinBERT multi-modal tweet classifier.
 
@@ -136,6 +144,8 @@ def train(
         dropout: Dropout probability for regularization.
         evaluate_test: If True, run full evaluation on test set after training.
         temporal_split: If True, split by timestamp (train early, test late).
+        early_stopping_patience: Stop training if no improvement for N epochs.
+        buy_weight_boost: Multiplier for BUY class weight (>1.0 improves BUY recall).
 
     Returns:
         Dictionary with test evaluation results if evaluate_test=True, else None.
@@ -162,25 +172,45 @@ def train(
         logger.info("Splitting data by TIMESTAMP (temporal validation)...")
         df_train, df_val, df_test = split_by_time(df_reliable)
         split_summary = get_temporal_split_summary(df_train, df_val, df_test)
-        logger.info(f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)")
-        logger.info(f"  Date range: {split_summary['train']['date_range']['start']} to {split_summary['train']['date_range']['end']}")
-        logger.info(f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)")
-        logger.info(f"  Date range: {split_summary['val']['date_range']['start']} to {split_summary['val']['date_range']['end']}")
-        logger.info(f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)")
-        logger.info(f"  Date range: {split_summary['test']['date_range']['start']} to {split_summary['test']['date_range']['end']}")
+        logger.info(
+            f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)"
+        )
+        logger.info(
+            f"  Date range: {split_summary['train']['date_range']['start']} to {split_summary['train']['date_range']['end']}"
+        )
+        logger.info(
+            f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)"
+        )
+        logger.info(
+            f"  Date range: {split_summary['val']['date_range']['start']} to {split_summary['val']['date_range']['end']}"
+        )
+        logger.info(
+            f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)"
+        )
+        logger.info(
+            f"  Date range: {split_summary['test']['date_range']['start']} to {split_summary['test']['date_range']['end']}"
+        )
     else:
         logger.info("Splitting data by tweet_hash (random)...")
         df_train, df_val, df_test = split_by_hash(df_reliable)
         verify_no_leakage(df_train, df_val, df_test)
         split_summary = get_split_summary(df_train, df_val, df_test)
-        logger.info(f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)")
-        logger.info(f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)")
-        logger.info(f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)")
+        logger.info(
+            f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)"
+        )
+        logger.info(
+            f"Val: {split_summary['val']['samples']} samples ({split_summary['val']['percentage']:.1f}%)"
+        )
+        logger.info(
+            f"Test: {split_summary['test']['samples']} samples ({split_summary['test']['percentage']:.1f}%)"
+        )
 
     # ========== Step 3: Create categorical encodings ==========
     logger.info("Creating categorical encodings from training data...")
     encodings = create_categorical_encodings(df_train)
-    logger.info(f"Authors: {encodings['num_authors']}, Categories: {encodings['num_categories']}")
+    logger.info(
+        f"Authors: {encodings['num_authors']}, Categories: {encodings['num_categories']}"
+    )
 
     # ========== Step 4: Initialize tokenizer ==========
     logger.info(f"Loading tokenizer from {FINBERT_MODEL_NAME}")
@@ -217,9 +247,15 @@ def train(
     # ========== Step 6: Compute class weights ==========
     logger.info("Computing class weights...")
     class_weights = compute_class_weights(df_train[TARGET_COLUMN])
+
+    # Apply BUY weight boost if specified (improves BUY recall at expense of precision)
+    if buy_weight_boost != 1.0:
+        class_weights = apply_buy_boost(class_weights, buy_weight_boost)
+        logger.info(f"Applied BUY weight boost: {buy_weight_boost}x")
+
     class_weights_tensor = weights_to_tensor(class_weights)
 
-    weight_summary = get_weight_summary(df_train[TARGET_COLUMN])
+    weight_summary = get_weight_summary(df_train[TARGET_COLUMN], class_weights)
     for label, info in weight_summary.items():
         logger.info(f"  {label}: count={info['count']}, weight={info['weight']:.3f}")
 
@@ -249,8 +285,17 @@ def train(
         learning_rate=learning_rate,
     )
 
-    # ========== Step 9: Initialize trainer ==========
+    # ========== Step 9: Initialize trainer with early stopping ==========
     logger.info("Initializing WeightedTrainer...")
+    callbacks = []
+    if early_stopping_patience > 0:
+        callbacks.append(
+            EarlyStoppingCallback(early_stopping_patience=early_stopping_patience)
+        )
+        logger.info(
+            f"Early stopping enabled: patience={early_stopping_patience} epochs"
+        )
+
     trainer = WeightedTrainer(
         class_weights=class_weights_tensor,
         model=model,
@@ -258,6 +303,7 @@ def train(
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
+        callbacks=callbacks if callbacks else None,
     )
 
     # ========== Step 10: Train ==========
@@ -378,6 +424,18 @@ def main() -> None:
         action="store_true",
         help="Use temporal split (train on early dates, test on late dates) instead of random hash split",
     )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=2,
+        help="Stop training if no improvement for N epochs (0 to disable)",
+    )
+    parser.add_argument(
+        "--buy-weight-boost",
+        type=float,
+        default=1.0,
+        help="Multiplier for BUY class weight (>1.0 improves BUY recall, e.g., 1.4)",
+    )
 
     args = parser.parse_args()
 
@@ -391,9 +449,10 @@ def main() -> None:
         dropout=args.dropout,
         evaluate_test=args.evaluate_test,
         temporal_split=args.temporal_split,
+        early_stopping_patience=args.early_stopping_patience,
+        buy_weight_boost=args.buy_weight_boost,
     )
 
 
 if __name__ == "__main__":
     main()
-

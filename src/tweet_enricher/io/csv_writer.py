@@ -132,4 +132,3 @@ class TickerFilter:
                 if ticker:
                     tickers.add(ticker)
         return tickers
-
