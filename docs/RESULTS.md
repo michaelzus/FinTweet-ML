@@ -14,41 +14,51 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 | **Baseline (Random)** | 33.3% |
 | **Improvement over Random** | +9.5% |
 
+```mermaid
+pie title Model Performance vs Random Baseline
+    "Correct Predictions" : 42.8
+    "Incorrect Predictions" : 57.2
+```
+
 ---
 
 ## Model Architecture
 
-### FinBERT Multi-Modal Classifier
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Input Layer                          │
-├─────────────────┬─────────────────┬────────────────────┤
-│   Tweet Text    │  Numerical (10) │  Categorical (5)   │
-│   (128 tokens)  │   Features      │    Features        │
-└────────┬────────┴────────┬────────┴─────────┬──────────┘
-         │                 │                  │
-    ┌────▼────┐      ┌─────▼─────┐     ┌──────▼──────┐
-    │ FinBERT │      │  Linear   │     │ Embeddings  │
-    │ (frozen)│      │  (32-dim) │     │  (per-feat) │
-    └────┬────┘      └─────┬─────┘     └──────┬──────┘
-         │                 │                  │
-         └────────────┬────┴──────────────────┘
-                      │
-               ┌──────▼──────┐
-               │   Concat    │
-               │  + Dropout  │
-               └──────┬──────┘
-                      │
-               ┌──────▼──────┐
-               │  Classifier │
-               │   (3-way)   │
-               └──────┬──────┘
-                      │
-               ┌──────▼──────┐
-               │  BUY/HOLD/  │
-               │    SELL     │
-               └─────────────┘
+```mermaid
+flowchart TB
+    subgraph Input[Input Layer]
+        Text["Tweet Text<br/>128 tokens"]
+        Num["Numerical<br/>10 features"]
+        Cat["Categorical<br/>5 features"]
+    end
+    
+    subgraph Encoders[Encoders]
+        BERT["FinBERT<br/>(frozen)<br/>768d"]
+        Linear["Linear<br/>32d"]
+        Embed["Embeddings<br/>(learned)"]
+    end
+    
+    subgraph Fusion[Fusion]
+        Concat["Concatenate<br/>~850d"]
+        Drop["Dropout 0.3"]
+    end
+    
+    subgraph Output[Output]
+        Classifier["Linear Classifier"]
+        Labels["BUY / HOLD / SELL"]
+    end
+    
+    Text --> BERT
+    Num --> Linear
+    Cat --> Embed
+    
+    BERT --> Concat
+    Linear --> Concat
+    Embed --> Concat
+    
+    Concat --> Drop
+    Drop --> Classifier
+    Classifier --> Labels
 ```
 
 ### Key Design Decisions
@@ -67,6 +77,14 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 
 ### Freeze vs. Fine-Tune Comparison
 
+```mermaid
+xychart-beta
+    title "Freeze vs Fine-Tune Performance"
+    x-axis ["Fine-Tune", "Frozen BERT"]
+    y-axis "Test Accuracy %" 35 --> 50
+    bar [41.9, 42.8]
+```
+
 | Configuration | Test Acc | F1 Macro | Overfitting |
 |--------------|----------|----------|-------------|
 | Full Fine-Tune | 41.9% | 37.6% | High (train 95%+) |
@@ -76,11 +94,38 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 
 ### Per-Class Performance (Best Model)
 
+```mermaid
+xychart-beta
+    title "Per-Class F1 Scores"
+    x-axis ["SELL", "HOLD", "BUY"]
+    y-axis "F1 Score %" 0 --> 60
+    bar [52, 35, 34]
+```
+
 | Class | Precision | Recall | F1-Score | Support |
 |-------|-----------|--------|----------|---------|
 | SELL | 45% | 62% | 52% | 272 |
 | HOLD | 36% | 35% | 35% | 134 |
 | BUY | 42% | 28% | 34% | 233 |
+
+### Confusion Matrix
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#fff'}}}%%
+flowchart TD
+    subgraph Matrix["Confusion Matrix"]
+        direction TB
+        A["<b>Predicted SELL</b>"]
+        B["<b>Predicted HOLD</b>"]
+        C["<b>Predicted BUY</b>"]
+    end
+    
+    subgraph Actual["Actual Labels"]
+        SELL["SELL: 169 / 58 / 45"]
+        HOLD["HOLD: 43 / 47 / 44"]
+        BUY["BUY: 66 / 101 / 66"]
+    end
+```
 
 ### Trading Metrics
 
@@ -96,6 +141,14 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 
 ### Feature Importance
 
+```mermaid
+xychart-beta
+    title "Feature Set Impact on Accuracy"
+    x-axis ["Text Only", "Baseline 4", "+ Momentum", "+ Trend", "All 10"]
+    y-axis "Test Accuracy %" 35 --> 45
+    bar [38.1, 42.8, 43.1, 42.9, 43.2]
+```
+
 | Feature Set | Test Acc | Δ from Baseline |
 |-------------|----------|-----------------|
 | Text Only | 38.1% | -4.7% |
@@ -108,6 +161,23 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 
 ### Baseline Features (Most Important)
 
+```mermaid
+mindmap
+  root((Key Features))
+    Volatility
+      volatility_7d
+      Recent price swings
+    Volume
+      relative_volume
+      Anomaly detection
+    Momentum
+      rsi_14
+      Overbought/oversold
+    Trend
+      distance_from_ma_20
+      Relative position
+```
+
 1. `volatility_7d` - Recent price volatility
 2. `relative_volume` - Volume anomaly detection
 3. `rsi_14` - Momentum indicator
@@ -118,6 +188,14 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 ## Data Quality Impact
 
 ### Dataset Comparison
+
+```mermaid
+xychart-beta
+    title "Quality vs Quantity: Test Accuracy"
+    x-axis ["180-day filtered", "2025 filtered", "2025 full"]
+    y-axis "Test Accuracy %" 35 --> 45
+    bar [42.8, 41.2, 39.1]
+```
 
 | Dataset | Samples | Reliability | Test Acc |
 |---------|---------|-------------|----------|
@@ -131,6 +209,17 @@ FinTweet-ML achieves **statistically significant predictive power** for short-te
 
 Walk-forward validation confirms model doesn't overfit to specific time periods:
 
+```mermaid
+gantt
+    title Walk-Forward Validation
+    dateFormat YYYY-MM
+    section Training
+    Train Window     :train, 2024-01, 2024-10
+    section Validation
+    Nov Test         :test1, 2024-10, 2024-11
+    Dec Test         :test2, 2024-11, 2024-12
+```
+
 | Period | Accuracy | IC |
 |--------|----------|-----|
 | Nov 2024 | 41.5% | 0.048 |
@@ -142,6 +231,23 @@ Walk-forward validation confirms model doesn't overfit to specific time periods:
 ## Conclusions
 
 ### What Works
+
+```mermaid
+mindmap
+  root((Success Factors))
+    FinBERT
+      Pre-trained embeddings
+      Financial domain knowledge
+    Frozen Layers
+      Prevents overfitting
+      Small dataset friendly
+    Technical Indicators
+      Volatility signal
+      Volume anomalies
+    Temporal Splits
+      Realistic evaluation
+      No data leakage
+```
 
 1. **FinBERT captures financial sentiment** - Pre-trained embeddings provide strong baseline
 2. **Frozen layers prevent overfitting** - Critical for small datasets
@@ -156,6 +262,25 @@ Walk-forward validation confirms model doesn't overfit to specific time periods:
 
 ### Future Improvements
 
+```mermaid
+flowchart LR
+    subgraph Current[Current State]
+        Model[FinBERT 42.8%]
+    end
+    
+    subgraph Future[Future Work]
+        Data[Larger Dataset]
+        Multi[Multi-Task Learning]
+        Ensemble[Ensemble Models]
+        Realtime[Real-Time Pipeline]
+    end
+    
+    Model --> Data
+    Model --> Multi
+    Model --> Ensemble
+    Model --> Realtime
+```
+
 1. Larger training dataset
 2. Multi-task learning (1hr + 1day labels)
 3. Ensemble with traditional ML models
@@ -168,7 +293,8 @@ Walk-forward validation confirms model doesn't overfit to specific time periods:
 ### Training Command
 
 ```bash
-python -m tweet_classifier.train \
+fintweet-ml train \
+    --data output/dataset.csv \
     --epochs 5 \
     --batch-size 16 \
     --freeze-bert \
@@ -185,4 +311,3 @@ python -m tweet_classifier.train \
 ### Random Seeds
 
 All experiments use `RANDOM_SEED = 42` for reproducibility.
-

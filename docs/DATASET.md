@@ -15,6 +15,28 @@ FinTweet-ML uses a multi-source dataset combining financial social media data wi
 
 ## Data Sources
 
+```mermaid
+flowchart TB
+    subgraph Twitter[Twitter Sources]
+        T1[StockMKTNewz]
+        T2[wallstengine]
+        T3[amitisinvesting]
+        T4[AIStockSavvy]
+        T5[fiscal_ai]
+        T6[EconomyApp]
+    end
+    
+    subgraph IB[Interactive Brokers]
+        SP500[S&P 500 Tickers]
+        Russell[Russell 1000]
+        Daily[Daily OHLCV]
+        Intraday[15-min Bars]
+    end
+    
+    Twitter --> |TwitterAPI.io| TweetDB[(tweets.db)]
+    IB --> |IB TWS API| Cache[(feather cache)]
+```
+
 ### 1. Twitter Financial Tweets
 
 **Source Accounts:**
@@ -54,26 +76,49 @@ FinTweet-ML uses a multi-source dataset combining financial social media data wi
 
 ## Data Processing Pipeline
 
-```
-┌─────────────────┐     ┌─────────────────┐
-│  Twitter API    │     │  IBKR TWS API   │
-│  (tweets.db)    │     │  (feather files)│
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         └───────────┬───────────┘
-                     │
-              ┌──────▼──────┐
-              │   Enricher  │
-              │  (merge by  │
-              │   ticker +  │
-              │  timestamp) │
-              └──────┬──────┘
-                     │
-              ┌──────▼──────┐
-              │  Enriched   │
-              │   Dataset   │
-              │   (CSV)     │
-              └─────────────┘
+```mermaid
+flowchart TB
+    subgraph Sources[Data Sources]
+        TweetDB[(tweets.db)]
+        DailyCache[(daily/*.feather)]
+        IntradayCache[(intraday/*.feather)]
+    end
+    
+    subgraph Processing[DatasetBuilder]
+        LoadTweets[Load Tweets]
+        LoadDaily[Load Daily OHLCV]
+        LoadIntraday[Load Intraday]
+        
+        TZ[Timezone Normalization]
+        Session[Market Session Classification]
+        
+        Entry[Calculate Entry Price]
+        Indicators[Technical Indicators]
+        Labels[Generate Labels]
+        
+        Validate[Reliability Check]
+    end
+    
+    subgraph Output[Output]
+        Dataset[enriched_dataset.csv]
+    end
+    
+    TweetDB --> LoadTweets
+    DailyCache --> LoadDaily
+    IntradayCache --> LoadIntraday
+    
+    LoadTweets --> TZ
+    TZ --> Session
+    
+    LoadDaily --> Indicators
+    LoadIntraday --> Entry
+    
+    Session --> Entry
+    Entry --> Labels
+    Indicators --> Labels
+    
+    Labels --> Validate
+    Validate --> Dataset
 ```
 
 ### Key Processing Steps
@@ -95,6 +140,42 @@ FinTweet-ML uses a multi-source dataset combining financial social media data wi
 ---
 
 ## Feature Engineering
+
+```mermaid
+flowchart LR
+    subgraph Numerical[Numerical Features - 10]
+        Vol[volatility_7d]
+        RSI[rsi_14]
+        RelVol[relative_volume]
+        Dist[distance_from_ma_20]
+        Ret5[return_5d]
+        Ret20[return_20d]
+        Above[above_ma_20]
+        Slope[slope_ma_20]
+        Gap[gap_open]
+        Range[intraday_range]
+    end
+    
+    subgraph Categorical[Categorical Features - 5]
+        Author[author]
+        Category[category]
+        Regime[market_regime]
+        Sector[sector]
+        Cap[market_cap_bucket]
+    end
+    
+    subgraph Text[Text Feature]
+        Tweet[tweet text]
+    end
+    
+    Numerical --> Scaler[StandardScaler]
+    Categorical --> Embeddings[Learned Embeddings]
+    Text --> FinBERT[FinBERT Encoder]
+    
+    Scaler --> Model[Model Input]
+    Embeddings --> Model
+    FinBERT --> Model
+```
 
 ### Numerical Features (10 total)
 
@@ -131,6 +212,19 @@ FinTweet-ML uses a multi-source dataset combining financial social media data wi
 
 ## Label Generation
 
+```mermaid
+flowchart LR
+    Entry[Entry Price<br/>first bar after tweet]
+    NextOpen[Next Day Open]
+    
+    Entry --> Return["return = (next_open - entry) / entry"]
+    NextOpen --> Return
+    
+    Return --> |"> +0.5%"| BUY[BUY]
+    Return --> |"-0.5% to +0.5%"| HOLD[HOLD]
+    Return --> |"< -0.5%"| SELL[SELL]
+```
+
 ### Target: `label_1d_3class`
 
 1-day forward return classified into 3 classes:
@@ -153,6 +247,24 @@ FinTweet-ML uses a multi-source dataset combining financial social media data wi
 
 ### Reliability Filters
 
+```mermaid
+flowchart TB
+    Sample[Tweet Sample]
+    
+    Sample --> C1{Valid entry price?}
+    C1 --> |No| Unreliable[Mark Unreliable]
+    C1 --> |Yes| C2{Valid next day open?}
+    
+    C2 --> |No| Unreliable
+    C2 --> |Yes| C3{Market was open?}
+    
+    C3 --> |No| Unreliable
+    C3 --> |Yes| C4{No data gaps?}
+    
+    C4 --> |No| Unreliable
+    C4 --> |Yes| Reliable[Mark Reliable]
+```
+
 Samples are marked as "reliable" when:
 - Valid price at tweet time
 - Valid forward price for return calculation
@@ -173,9 +285,16 @@ Samples are marked as "reliable" when:
 
 ### Strategy: Temporal Split (80/10/10)
 
-```
-|←────── Train (80%) ──────→|←─ Val ─→|←─ Test ─→|
-|        Jan - Oct          |   Nov   |    Dec   |
+```mermaid
+gantt
+    title Temporal Data Split
+    dateFormat YYYY-MM
+    section Training
+    Train 80%    :train, 2024-01, 2024-10
+    section Validation
+    Val 10%      :val, 2024-10, 2024-11
+    section Testing
+    Test 10%     :test, 2024-11, 2024-12
 ```
 
 **Why Temporal Split?**
@@ -227,4 +346,3 @@ EXCLUDED_FROM_FEATURES = [
 | `data/daily/*.feather` | Daily OHLCV per ticker |
 | `data/intraday/*.feather` | 15-min bars per ticker |
 | `output/*.csv` | Enriched datasets (gitignored) |
-

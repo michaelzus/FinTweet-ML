@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.scripts]
-tweet-enricher = "tweet_enricher.cli:main"
+fintweet-ml = "tweet_enricher.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

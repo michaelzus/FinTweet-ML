@@ -30,39 +30,59 @@ FinTweet-ML demonstrates a complete ML workflow for predicting stock movements f
 
 ---
 
-## Architecture
+## Pipeline Architecture
 
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Twitter   │    │    IBKR     │    │  Enriched   │    │  FinBERT    │
-│   Tweets    │───▶│  Market     │───▶│  Dataset    │───▶│  Classifier │
-│             │    │  Data       │    │  (35K rows) │    │  (3-class)  │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+```mermaid
+flowchart LR
+    subgraph Flow1[Flow 1: OHLCV]
+        IB[IB API] --> DailyCache[(data/daily)]
+        IB --> IntradayCache[(data/intraday)]
+    end
+    
+    subgraph Flow2[Flow 2: Tweets]
+        Twitter[Twitter API] --> TweetDB[(tweets.db)]
+    end
+    
+    subgraph Flow3[Flow 3: Prepare]
+        DailyCache --> Builder[DatasetBuilder]
+        IntradayCache --> Builder
+        TweetDB --> Builder
+        Builder --> Dataset[dataset.csv]
+    end
+    
+    subgraph Flow4[Flow 4: Train]
+        Dataset --> Model[FinBERT Model]
+        Model --> Eval[Evaluation]
+    end
 ```
 
 ### Model Architecture
 
-```
-              ┌─────────────────────────────────────────┐
-              │         FinBERT Multi-Modal             │
-              ├─────────────┬─────────────┬─────────────┤
-              │  Text (128) │ Numerical   │ Categorical │
-              │             │ (10 feats)  │ (5 feats)   │
-              └──────┬──────┴──────┬──────┴──────┬──────┘
-                     │             │             │
-              ┌──────▼──────┐ ┌────▼────┐ ┌──────▼──────┐
-              │   FinBERT   │ │ Linear  │ │ Embeddings  │
-              │  (frozen)   │ │  (32)   │ │  (learned)  │
-              └──────┬──────┘ └────┬────┘ └──────┬──────┘
-                     └─────────────┼─────────────┘
-                            ┌──────▼──────┐
-                            │   Concat    │
-                            │  + Dropout  │
-                            └──────┬──────┘
-                            ┌──────▼──────┐
-                            │ BUY / HOLD  │
-                            │   / SELL    │
-                            └─────────────┘
+```mermaid
+flowchart TB
+    subgraph Input[Input Layer]
+        Text[Text - 128 tokens]
+        Num[Numerical - 10 features]
+        Cat[Categorical - 5 features]
+    end
+    
+    subgraph Processing[Processing]
+        Text --> BERT[FinBERT - frozen - 768d]
+        Num --> Linear[Linear - 32d]
+        Cat --> Embed[Embeddings - learned]
+    end
+    
+    subgraph Fusion[Fusion Layer]
+        BERT --> Concat[Concatenate ~850d]
+        Linear --> Concat
+        Embed --> Concat
+        Concat --> Dropout[Dropout 0.3]
+    end
+    
+    subgraph Output[Output]
+        Dropout --> Classifier[Linear Classifier]
+        Classifier --> Labels[BUY / HOLD / SELL]
+    end
 ```
 
 ---
@@ -93,17 +113,22 @@ FinTweet-ML demonstrates a complete ML workflow for predicting stock movements f
 ```
 FinTweet-ML/
 ├── src/
-│   ├── tweet_enricher/      # Data pipeline
+│   ├── tweet_enricher/      # Data pipeline (Flows 1-3)
 │   │   ├── twitter/         # Twitter API client
 │   │   ├── data/            # IBKR fetcher, caching
-│   │   ├── core/            # Enrichment logic
+│   │   ├── core/            # Enrichment & dataset builder
 │   │   └── market/          # Market session handling
 │   │
-│   └── tweet_classifier/    # ML training
+│   └── tweet_classifier/    # ML training (Flow 4)
 │       ├── model.py         # FinBERT architecture
 │       ├── train.py         # Training script
 │       ├── evaluate.py      # Metrics & evaluation
 │       └── data/            # Data loading & splits
+│
+├── data/
+│   ├── daily/               # Daily OHLCV cache (feather)
+│   ├── intraday/            # Intraday cache (feather)
+│   └── tweets.db            # SQLite tweet storage
 │
 ├── scripts/
 │   └── validate_dataset.py  # Data validation
@@ -136,25 +161,25 @@ source venv/bin/activate
 pip install -e .
 ```
 
-### Training
+### CLI Commands
 
 ```bash
-# Train the classifier
-python -m tweet_classifier.train \
-    --epochs 5 \
-    --batch-size 16 \
-    --freeze-bert \
-    --evaluate-test
-```
+# Flow 1: Collect OHLCV data (requires IBKR TWS)
+fintweet-ml ohlcv sync --sp500
+fintweet-ml ohlcv backfill --start-date 2024-01-01 --all-cached
+fintweet-ml ohlcv status
 
-### Data Pipeline (requires IBKR TWS)
+# Flow 2: Collect tweets
+fintweet-ml twitter sync --months 6
+fintweet-ml twitter status
+fintweet-ml twitter export -o tweets.csv
 
-```bash
-# Fetch market data
-tweet-enricher fetch --sp500
+# Flow 3: Prepare dataset (offline - no API needed!)
+fintweet-ml prepare --tweets data/tweets.db --output output/dataset.csv
 
-# Enrich tweets with features
-tweet-enricher enrich -i tweets.csv -o enriched.csv
+# Flow 4: Train and evaluate
+fintweet-ml train --data output/dataset.csv --epochs 5 --evaluate-test
+fintweet-ml evaluate --model models/final --data output/dataset.csv
 ```
 
 ---
