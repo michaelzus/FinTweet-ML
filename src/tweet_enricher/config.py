@@ -47,6 +47,40 @@ EXCLUDED_TICKERS = {
     "COO",
     "UGI",
     "SYF",
+    # Indices, crypto, and non-stock symbols (not available as stocks in IB)
+    "DJI",  # Dow Jones Industrial Average index
+    "DXY",  # US Dollar Index
+    "DOGE",  # Dogecoin crypto
+    "BTC",  # Bitcoin
+    "ETH",  # Ethereum
+    "XRP",  # Ripple
+    "SOL",  # Solana
+    "DSYNC",  # Not a valid stock
+    "SPX",  # S&P 500 index (use SPY instead)
+    "NDX",  # Nasdaq 100 index (use QQQ instead)
+    "VIX",  # Volatility index
+    "TNX",  # 10-Year Treasury yield
+    # Wrong symbol format (period instead of dash)
+    "BRK",  # Should be BRK-B
+    "BRK.B",  # Should be BRK-B
+    "BF",  # Should be BF-B
+    "BF.B",  # Should be BF-B
+    # Crypto/AI tokens (not stocks)
+    "AITECH",
+    "BLENDR",
+    "DEAI",
+    "HASHAI",
+    "OPSEC",
+    "WIF",
+    "SAI",
+    "GPU",  # Crypto token
+    # Delisted/acquired/invalid
+    "FFIE",  # Faraday Future - delisted
+    "GBLE",  # Invalid
+    "PARA",  # Paramount - acquired
+    "SQ",  # Block Inc - changed to XYZ
+    "WBA",  # Walgreens - went private
+    "ZK",  # Chinese company - BEST queries not supported
 }
 
 # Default IB connection settings

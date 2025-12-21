@@ -116,44 +116,6 @@ def fetch_russell1000_tickers() -> List[str]:
         raise Exception(f"Failed to fetch Russell 1000 tickers: {e}")
 
 
-def read_tickers_from_csv(csv_file: str, column_name: str = "symbol") -> List[str]:
-    """
-    Read a list of ticker symbols from a CSV file.
-
-    Args:
-        csv_file: Path to CSV file containing ticker symbols
-        column_name: Name of the column containing ticker symbols (default: "symbol")
-
-    Returns:
-        List of ticker symbols
-
-    Raises:
-        FileNotFoundError: If CSV file doesn't exist
-        KeyError: If column_name doesn't exist in CSV
-        Exception: For other errors during reading
-    """
-    try:
-        csv_path = Path(csv_file)
-        if not csv_path.exists():
-            raise FileNotFoundError(f"CSV file not found: {csv_file}")
-
-        df = pd.read_csv(csv_path)
-
-        if column_name not in df.columns:
-            available_columns = df.columns.tolist()
-            raise KeyError(f"Column '{column_name}' not found. Available columns: {available_columns}")
-
-        tickers = df[column_name].dropna().unique().tolist()
-        tickers = [str(ticker).strip() for ticker in tickers if str(ticker).strip()]
-
-        logger.info(f"Read {len(tickers)} unique tickers from {csv_file}")
-        return tickers
-
-    except Exception as e:
-        logger.error(f"Error reading tickers from CSV: {e}")
-        raise
-
-
 def filter_tickers_by_volume(data_dir: str = str(DAILY_DATA_DIR), min_avg_volume: float = 1_000_000) -> List[str]:
     """
     Filter tickers based on average daily trading volume.

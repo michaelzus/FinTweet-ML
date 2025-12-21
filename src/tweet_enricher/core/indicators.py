@@ -267,19 +267,18 @@ class TechnicalIndicators:
             Dictionary with all calculated indicators
         """
         indicators = {
-            # Original core indicators
-            "return_1d": self.calculate_return(df, current_idx, periods=1),
+            # Core indicators
             "volatility_7d": self.calculate_volatility(df, current_idx, window=7),
             "relative_volume": self.calculate_relative_volume(df, current_idx),
             "rsi_14": self.calculate_rsi(df, current_idx),
             "distance_from_ma_20": self.calculate_distance_from_ma(df, current_idx),
-            # NEW: Multi-period momentum
+            # Multi-period momentum
             "return_5d": self.calculate_return(df, current_idx, periods=5),
             "return_20d": self.calculate_return(df, current_idx, periods=20),
-            # NEW: Trend confirmation
+            # Trend confirmation
             "above_ma_20": self.calculate_above_ma(df, current_idx, period=20),
             "slope_ma_20": self.calculate_ma_slope(df, current_idx, period=20, lookback=5),
-            # NEW: Shock/Gap features
+            # Shock/Gap features
             "gap_open": self.calculate_gap_open(df, current_idx),
             "intraday_range": self.calculate_intraday_range(df, current_idx),
         }

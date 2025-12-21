@@ -341,10 +341,8 @@ class TweetEnricher:
         # Calculate technical indicators
         indicators = self.indicators.calculate_all_indicators(daily_df, current_idx)
 
-        # Get SPY data from cache for market adjustment
+        # Get SPY data from cache for market regime
         spy_df_full = self.cache.get_daily("SPY")
-        spy_return_1d = None
-        spy_df = None
         market_regime = None
 
         if spy_df_full is not None and not spy_df_full.empty:
@@ -352,20 +350,9 @@ class TweetEnricher:
             spy_df = spy_df_full[spy_df_full.index.date < tweet_date].copy()
 
             if not spy_df.empty:
-                spy_dates = spy_df.index.date
-                spy_valid_indices = [i for i, d in enumerate(spy_dates) if d <= tweet_date]
-
-                if spy_valid_indices:
-                    spy_idx = spy_valid_indices[-1]
-                    self.logger.debug(f"SPY: Found {len(spy_df)} bars, using index {spy_idx} (date: {spy_dates[spy_idx]})")
-                    spy_return_1d = self.indicators.calculate_return(spy_df, spy_idx, periods=1)
-                    self.logger.debug(f"SPY return_1d: {spy_return_1d}")
-
-                    # Calculate market regime
-                    market_regime = get_market_regime(spy_df, timestamp)
-                    self.logger.debug(f"Market regime: {market_regime}")
-                else:
-                    self.logger.warning(f"No SPY data found for date <= {tweet_date}")
+                # Calculate market regime
+                market_regime = get_market_regime(spy_df, timestamp)
+                self.logger.debug(f"Market regime: {market_regime}")
             else:
                 self.logger.warning(f"No SPY data before/on {tweet_date}")
         else:

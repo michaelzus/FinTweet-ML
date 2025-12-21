@@ -8,7 +8,7 @@ and works entirely offline with cached data.
 import hashlib
 import logging
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -545,19 +545,3 @@ class DatasetBuilder:
             "return_to_next_open": None,
             "label_1d_3class": None,
         }
-
-    def get_required_tickers(self, tweets_df: pd.DataFrame) -> List[str]:
-        """
-        Get list of all tickers required for building the dataset.
-
-        Args:
-            tweets_df: DataFrame with tweets
-
-        Returns:
-            List of unique ticker symbols (including SPY for market regime)
-        """
-        tickers = tweets_df["ticker"].unique().tolist()
-        if "SPY" not in tickers:
-            tickers.append("SPY")
-        return tickers
-

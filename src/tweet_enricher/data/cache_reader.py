@@ -241,10 +241,3 @@ class CacheReader:
             return []
 
         return sorted([f.stem for f in cache_dir.glob("*.feather")])
-
-    def clear_memory_cache(self) -> None:
-        """Clear in-memory caches to free memory."""
-        self._daily_cache.clear()
-        self._intraday_cache.clear()
-        logger.debug("Memory cache cleared")
-

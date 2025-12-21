@@ -4,9 +4,8 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Optional
 
-import pytz
 import requests
 import urllib3
 
@@ -286,58 +285,6 @@ class TwitterClient:
                 if skipped_existing > 0:
                     logger.info(f"Skipped {skipped_existing} existing tweets during backfill")
                 return new_tweets, api_calls, None
-
-            cursor = next_cursor
-
-    def fetch_all_tweets(
-        self,
-        username: str,
-        max_tweets: Optional[int] = None,
-        since_id: Optional[str] = None,
-        include_replies: bool = False,
-    ) -> Iterator[Tweet]:
-        """
-        Fetch all tweets for a user with pagination.
-
-        Note: For incremental sync with cost optimization, use fetch_tweets_incremental().
-
-        Args:
-            username: Twitter username (without @)
-            max_tweets: Maximum number of tweets to fetch (None = no limit)
-            since_id: Stop fetching when reaching this tweet ID
-            include_replies: Whether to include reply tweets
-
-        Yields:
-            Tweet objects
-        """
-        cursor = None
-        total_fetched = 0
-
-        while True:
-            tweets, next_cursor, has_next_page = self.fetch_tweets(
-                username=username,
-                cursor=cursor,
-                include_replies=include_replies,
-            )
-
-            for tweet in tweets:
-                # Stop if we've reached a tweet we already have
-                if since_id and tweet.id == since_id:
-                    logger.info(f"Reached existing tweet {since_id}, stopping")
-                    return
-
-                yield tweet
-                total_fetched += 1
-
-                # Stop if we've reached max tweets
-                if max_tweets and total_fetched >= max_tweets:
-                    logger.info(f"Reached max tweets limit ({max_tweets})")
-                    return
-
-            # Check if there are more pages
-            if not has_next_page or not next_cursor:
-                logger.info(f"No more pages, fetched {total_fetched} total tweets")
-                return
 
             cursor = next_cursor
 

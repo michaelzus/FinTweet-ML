@@ -177,24 +177,3 @@ class StockMetadataCache:
         self._save_cache()
 
         return metadata
-
-    def prefetch_metadata(self, tickers: list[str]) -> None:
-        """
-        Prefetch metadata for multiple tickers.
-
-        Args:
-            tickers: List of ticker symbols
-        """
-        uncached = [t for t in tickers if t not in self._cache]
-
-        if not uncached:
-            logger.info("All tickers already cached")
-            return
-
-        logger.info(f"Prefetching metadata for {len(uncached)} tickers...")
-
-        for i, ticker in enumerate(uncached, 1):
-            logger.info(f"[{i}/{len(uncached)}] Fetching {ticker}...")
-            self.get_metadata(ticker)
-
-        logger.info(f"Prefetch complete. Total cached: {len(self._cache)}")

@@ -446,17 +446,69 @@ class TweetDatabase:
                 for row in rows
             ]
 
-    def get_tweet_count(self) -> int:
-        """Get total number of processed tweets."""
-        with self._get_connection() as conn:
-            row = conn.execute("SELECT COUNT(*) as cnt FROM tweets_processed").fetchone()
-            return row["cnt"] if row else 0
+    def get_tickers_with_first_date(self) -> dict[str, datetime]:
+        """
+        Get unique tickers with their first appearance date.
 
-    def get_unique_tickers(self) -> list[str]:
-        """Get list of unique tickers in the database."""
+        Returns:
+            Dictionary mapping ticker symbol to first appearance datetime (ET)
+        """
         with self._get_connection() as conn:
-            rows = conn.execute("SELECT DISTINCT ticker FROM tweets_processed ORDER BY ticker").fetchall()
-            return [row["ticker"] for row in rows]
+            rows = conn.execute(
+                """
+                SELECT ticker, MIN(timestamp_et) as first_date 
+                FROM tweets_processed 
+                GROUP BY ticker 
+                ORDER BY ticker
+                """
+            ).fetchall()
+
+            result = {}
+            for row in rows:
+                ticker = row["ticker"]
+                first_date_str = row["first_date"]
+                # Parse the timestamp string to datetime
+                if first_date_str:
+                    try:
+                        result[ticker] = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        # Try ISO format
+                        result[ticker] = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
+            return result
+
+    def get_tickers_with_date_range(self) -> dict[str, tuple[datetime, datetime]]:
+        """
+        Get unique tickers with their first and last appearance dates.
+
+        Returns:
+            Dictionary mapping ticker symbol to (first_date, last_date) tuple (ET)
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT ticker, MIN(timestamp_et) as first_date, MAX(timestamp_et) as last_date
+                FROM tweets_processed 
+                GROUP BY ticker 
+                ORDER BY ticker
+                """
+            ).fetchall()
+
+            result: dict[str, tuple[datetime, datetime]] = {}
+            for row in rows:
+                ticker = row["ticker"]
+                first_date_str = row["first_date"]
+                last_date_str = row["last_date"]
+
+                if first_date_str and last_date_str:
+                    try:
+                        first_dt = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
+                        last_dt = datetime.strptime(last_date_str, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        # Try ISO format
+                        first_dt = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
+                        last_dt = datetime.fromisoformat(last_date_str.replace("Z", "+00:00"))
+                    result[ticker] = (first_dt, last_dt)
+            return result
 
     def get_raw_tweet_counts_by_account(self) -> dict[str, int]:
         """Get raw tweet counts per account from the database."""
