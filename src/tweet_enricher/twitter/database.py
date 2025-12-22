@@ -388,6 +388,60 @@ class TweetDatabase:
             conn.commit()
         return inserted
 
+    def _format_timestamp_for_query(self, dt: datetime) -> str:
+        """
+        Format datetime for SQLite query to match stored format.
+
+        Timestamps are stored WITH timezone offset (e.g., "2025-01-15 10:00:00-0500").
+        Query parameters must use the same format for correct string comparison.
+
+        Args:
+            dt: Datetime to format (should be timezone-aware in ET)
+
+        Returns:
+            Formatted timestamp string with timezone offset
+        """
+        # Ensure timezone-aware (assume ET if naive)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ET)
+        # Convert to ET and format with offset
+        dt_et = dt.astimezone(ET)
+        return dt_et.strftime("%Y-%m-%d %H:%M:%S%z")
+
+    def _parse_timestamp_et(self, ts_str: str) -> datetime:
+        """
+        Parse timestamp string from database, handling both formats.
+
+        Supports both:
+        - Old format without offset: "2025-01-15 10:00:00"
+        - New format with offset: "2025-01-15 10:00:00-0500"
+
+        Args:
+            ts_str: Timestamp string from database
+
+        Returns:
+            Timezone-aware datetime in ET
+        """
+        # Try format with timezone offset first (new format)
+        try:
+            dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S%z")
+            return dt.astimezone(ET)
+        except ValueError:
+            pass
+
+        # Try format without offset (old format, assume ET)
+        try:
+            dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+            return dt.replace(tzinfo=ET)
+        except ValueError:
+            pass
+
+        # Try ISO format as fallback
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            return dt.astimezone(ET)
+        return dt.replace(tzinfo=ET)
+
     def get_processed_tweets(
         self,
         since: Optional[datetime] = None,
@@ -412,11 +466,11 @@ class TweetDatabase:
 
         if since:
             query += " AND timestamp_et >= ?"
-            params.append(since.strftime("%Y-%m-%d %H:%M:%S"))
+            params.append(self._format_timestamp_for_query(since))
 
         if until:
             query += " AND timestamp_et <= ?"
-            params.append(until.strftime("%Y-%m-%d %H:%M:%S"))
+            params.append(self._format_timestamp_for_query(until))
 
         if account:
             query += " AND author = ?"
@@ -466,20 +520,8 @@ class TweetDatabase:
             for row in rows:
                 ticker = row["ticker"]
                 first_date_str = row["first_date"]
-                # Parse the timestamp string to datetime and mark as ET-aware
                 if first_date_str:
-                    try:
-                        dt = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
-                        # Mark as ET-aware (timestamps in DB are stored in ET)
-                        result[ticker] = dt.replace(tzinfo=ET)
-                    except ValueError:
-                        # Try ISO format (may already have timezone info)
-                        dt = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
-                        # Convert to ET if it has different timezone
-                        if dt.tzinfo is not None:
-                            result[ticker] = dt.astimezone(ET)
-                        else:
-                            result[ticker] = dt.replace(tzinfo=ET)
+                    result[ticker] = self._parse_timestamp_et(first_date_str)
             return result
 
     def get_tickers_with_date_range(self) -> dict[str, tuple[datetime, datetime]]:
@@ -506,25 +548,8 @@ class TweetDatabase:
                 last_date_str = row["last_date"]
 
                 if first_date_str and last_date_str:
-                    try:
-                        first_dt = datetime.strptime(first_date_str, "%Y-%m-%d %H:%M:%S")
-                        last_dt = datetime.strptime(last_date_str, "%Y-%m-%d %H:%M:%S")
-                        # Mark as ET-aware (timestamps in DB are stored in ET)
-                        first_dt = first_dt.replace(tzinfo=ET)
-                        last_dt = last_dt.replace(tzinfo=ET)
-                    except ValueError:
-                        # Try ISO format (may already have timezone info)
-                        first_dt = datetime.fromisoformat(first_date_str.replace("Z", "+00:00"))
-                        last_dt = datetime.fromisoformat(last_date_str.replace("Z", "+00:00"))
-                        # Convert to ET if they have different timezone
-                        if first_dt.tzinfo is not None:
-                            first_dt = first_dt.astimezone(ET)
-                        else:
-                            first_dt = first_dt.replace(tzinfo=ET)
-                        if last_dt.tzinfo is not None:
-                            last_dt = last_dt.astimezone(ET)
-                        else:
-                            last_dt = last_dt.replace(tzinfo=ET)
+                    first_dt = self._parse_timestamp_et(first_date_str)
+                    last_dt = self._parse_timestamp_et(last_date_str)
                     result[ticker] = (first_dt, last_dt)
             return result
 

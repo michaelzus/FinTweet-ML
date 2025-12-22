@@ -7,10 +7,13 @@ All timestamps in this pipeline are normalized to US Eastern Time (ET)
 for consistency with US market hours.
 """
 
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # Standard timezone constants
 ET = ZoneInfo("America/New_York")
@@ -54,26 +57,36 @@ def normalize_dataframe_timezone(df: pd.DataFrame) -> pd.DataFrame:
     Normalize DataFrame index to timezone-aware ET with DST-safe handling.
 
     This function handles Daylight Saving Time transitions safely:
-    - Fall-back (Nov): Uses 'infer' for ambiguous times (e.g., 1:30 AM exists twice)
+    - Fall-back (Nov): Marks ambiguous times as NaT and filters them out
     - Spring-forward (Mar): Shifts non-existent times forward (e.g., 2:30 AM -> 3:00 AM)
 
     Args:
         df: DataFrame with DatetimeIndex
 
     Returns:
-        DataFrame with timezone-aware index in US Eastern Time
+        DataFrame with timezone-aware index in US Eastern Time.
+        Rows with ambiguous DST times are filtered out with a warning.
 
     Note:
         If the index is already timezone-aware, it will be converted to ET.
         If the index is naive, it will be localized as ET (assumed to already
         be in ET, not converted from UTC).
+
+        Using ambiguous="NaT" is safer than "infer" because "infer" can raise
+        AmbiguousTimeError when pandas cannot determine the correct offset
+        from the data sequence (e.g., gaps during DST transition).
     """
     if df.index.tz is None:
         df.index = df.index.tz_localize(
             "America/New_York",
-            ambiguous="infer",  # Handle fall-back DST (Nov)
+            ambiguous="NaT",  # Mark ambiguous times as NaT (safer than "infer")
             nonexistent="shift_forward",  # Handle spring-forward DST (Mar)
         )
+        # Filter out rows with ambiguous DST times (now NaT)
+        nat_count = df.index.isna().sum()
+        if nat_count > 0:
+            logger.warning(f"Dropped {nat_count} rows with ambiguous DST times")
+            df = df[df.index.notna()].copy()
     else:
         df.index = df.index.tz_convert("America/New_York")
     return df

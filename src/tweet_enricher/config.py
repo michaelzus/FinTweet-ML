@@ -81,6 +81,45 @@ EXCLUDED_TICKERS = {
     "SQ",  # Block Inc - changed to XYZ
     "WBA",  # Walgreens - went private
     "ZK",  # Chinese company - BEST queries not supported
+    # Invalid/unrecognized symbols from IB validation (batch 2024-12-22)
+    # Typos and wrong symbols
+    "A285B", "AMAZ", "AMZ", "AMNZ", "ANZN", "APPL", "FORD", "GOOGLE", "LENOVO", "LVMH",
+    "NIKE", "ORACLE", "TSMC", "ZOOM", "HERMES", "MSFTON", "NLFX",
+    # Crypto/tokens (not stocks)
+    "ADA", "AI16Z", "AIABSC", "AIBSTRACTA", "AIC", "AIW", "AIX", "BASE", "BILLIONS",
+    "BLUB", "BSKY", "BTCM", "CUDIS", "DOLLARS", "ECONOMY", "FARTCOIN", "GOAT", "GREED",
+    "HAEDAL", "HTTPS", "KMNO", "LINEA", "LOFI", "OMEGA", "SLEEP", "SOLQ", "SOLQ.U",
+    "SQUIRT", "STARTUP", "STETH", "SWARMS", "TRUMP", "VIRTUAL",
+    # European/foreign tickers (not on US exchanges)
+    "ADYEN", "AENA", "ASMI", "ATZ.TO", "BEIJB", "BRBY", "CARLB", "DGE", "DHER", "DSV",
+    "HAYPP", "HEXAB", "KER", "LDO", "LDO.MI", "LIFCO", "MBG", "MC.PA", "MDA.CA", "NOVO",
+    "RHMG", "RHMG.DE", "RMS", "RMS.PA", "UMG",
+    # Delisted/invalid US tickers
+    "ADVM", "AGT", "AKRO", "ALCC", "ALCN", "ALTR", "AMI", "AMRK", "ANGUS", "ANSS", "AOF",
+    "ARAMCO", "ARCH", "ASTR", "ATD", "ATMV", "ATNF", "ATUS", "ATZ", "AUR.US", "AVDX",
+    "AVGP", "AXO", "AZEK", "AZPN", "AZUL", "BATS", "BECN", "BERY", "BFB", "BIGC", "BLDE",
+    "BLSY", "BLUE", "BOLSA", "BPMC", "BRDG", "BREA", "BRK.A", "BRPHF", "BRY", "BSGM",
+    "BVLOS", "BYDD", "BYON", "CBOW", "CCCM", "CEIX", "CENC", "CEO", "CFL", "CGLW",
+    "CHKEL", "CHKEZ", "CHX", "CJET", "CLFT", "CRGX", "CRWW", "CSGO", "CSU", "CSWI",
+    "CWRV", "DALN", "DCXM", "DFS", "DNUE", "DOOO", "DSK", "DTC", "DULO", "DYK", "DYNX",
+    "EDR", "ER", "ERJ", "ES_F", "ETNB", "ETWO", "EXAI", "FAAS", "FI", "FL", "FLSR",
+    "FUBP", "GA", "GB", "GB.WS", "GCI", "GMRAIRPORT", "GMS", "GOEV", "GOGL", "GOTO",
+    "GPS", "GSRT", "HBI", "HCP", "HEES", "HEI.A", "HEIA", "HES", "HIM", "HMST", "HO",
+    "HPW", "HUSA", "IAA", "IBRK", "ICLK", "INMS", "IPA", "IRBN", "IRBT", "ITCI", "JDD",
+    "JNPR", "JNVR", "JWN", "KDKRW", "KDLY", "KIND", "KLA", "KLG", "KLK", "KNW", "LANC",
+    "LIFX", "LPTX", "LURN", "MCG", "MCSA", "MDA", "MDEP", "ME", "MEIP", "MES", "MIU",
+    "MKX", "MLNK", "MNQ", "MOSTAFA", "MTAL", "MTSR", "MULN", "MWT", "MYM", "NARI", "NBI",
+    "NBUS", "NEP", "NEW", "NEWS", "NKLA", "NOVA", "NPWR.WS", "NQ", "NQ_F", "NUH", "NWTN",
+    "NYDOY", "OBKR", "OCTO", "ODP", "OLO", "ONVO", "OTRK", "PASS", "PBPB", "PCSO",
+    "PEAK", "PKSY", "PLYA", "PME", "PONY.AI", "PPONY", "PROR", "PRPX", "PRTG", "PSY",
+    "PTLR", "PXYS", "QBTI", "QLGN", "QSG", "QTBS", "RDFN", "RDT", "RGIT", "RGLS", "RI",
+    "RIOR", "RKBL", "RKLV", "RPI", "RRDW", "SAGE", "SATX", "SAVE", "SCS", "SHLL", "SKH",
+    "SKX", "SLHX", "SNPSP", "SOF", "SOI", "SOND", "SOX", "SPLG", "SPNS", "SPR", "SPTN",
+    "SRTAW", "SRX", "STR", "SUPM", "SWI", "SWTX", "TALA", "TBLX", "TEMP", "TEV", "TGI",
+    "THRD", "THTX", "TMS", "TPIC", "TRML", "TTW", "TVK", "UBM", "UBRT", "ULMN", "UMB",
+    "UMDY", "UNHO", "USM", "VBTX", "VDA", "VERV", "VI", "VITB", "VMEO", "VRNA", "VRNT",
+    "VRV", "VSET", "WAV", "WEL", "WHIN", "WHRL", "WHSP", "WMY", "WNS", "WULD", "X",
+    "XIACF", "XM", "XOF", "YLDS", "YM", "YNDX", "YY", "ZI",
 }
 
 # Default IB connection settings

@@ -9,8 +9,6 @@ import pandas_market_calendars as mcal
 
 from tweet_enricher.config import (
     AFTERHOURS_END,
-    MARKET_CLOSE,
-    MARKET_OPEN,
     PREMARKET_START,
 )
 from tweet_enricher.utils.timezone import (
@@ -72,15 +70,51 @@ def is_market_holiday(check_date: date) -> bool:
     return schedule.empty
 
 
+@lru_cache(maxsize=128)
+def _get_market_schedule(check_date: date) -> tuple[int, int] | None:
+    """
+    Get actual market open/close times for a date (handles half-days).
+
+    Args:
+        check_date: Date to get schedule for
+
+    Returns:
+        Tuple of (open_minutes, close_minutes) since midnight, or None if market closed
+    """
+    nyse = _get_nyse_calendar()
+    schedule = nyse.schedule(start_date=pd.Timestamp(check_date), end_date=pd.Timestamp(check_date))
+
+    if schedule.empty:
+        return None
+
+    # Extract actual times and convert to ET
+    market_open_utc = schedule.iloc[0]["market_open"]
+    market_close_utc = schedule.iloc[0]["market_close"]
+
+    # Convert to ET
+    market_open_et = market_open_utc.tz_convert("America/New_York")
+    market_close_et = market_close_utc.tz_convert("America/New_York")
+
+    # Convert to minutes since midnight
+    open_minutes = market_open_et.hour * 60 + market_open_et.minute
+    close_minutes = market_close_et.hour * 60 + market_close_et.minute
+
+    return (open_minutes, close_minutes)
+
+
 def get_market_session(timestamp: datetime) -> MarketSession:
     """
     Determine market session for a given timestamp.
 
     Handles:
-    - Regular trading hours (9:30 AM - 4:00 PM ET)
-    - Pre-market (4:00 AM - 9:30 AM ET)
-    - After-hours (4:00 PM - 8:00 PM ET)
+    - Regular trading hours (actual times from NYSE calendar, handles half-days)
+    - Pre-market (4:00 AM - market open ET)
+    - After-hours (market close - 8:00 PM ET)
     - Closed (weekends, holidays, overnight)
+
+    Note:
+        On half-trading days (e.g., Thanksgiving eve), market closes at 1:00 PM.
+        This function correctly classifies tweets after early close as AFTERHOURS.
 
     Args:
         timestamp: Timestamp to check
@@ -95,18 +129,23 @@ def get_market_session(timestamp: datetime) -> MarketSession:
     if timestamp.weekday() >= 5:  # Saturday = 5, Sunday = 6
         return MarketSession.CLOSED
 
-    # Check if it's a market holiday
-    if is_market_holiday(timestamp.date()):
+    # Get actual market schedule for this date (handles half-days)
+    schedule = _get_market_schedule(timestamp.date())
+
+    if schedule is None:
+        # Market holiday
         return MarketSession.CLOSED
 
-    # Convert to minutes since midnight
+    actual_open, actual_close = schedule
+
+    # Convert timestamp to minutes since midnight
     minutes_since_midnight = timestamp.hour * 60 + timestamp.minute
 
-    if MARKET_OPEN <= minutes_since_midnight < MARKET_CLOSE:
+    if actual_open <= minutes_since_midnight < actual_close:
         return MarketSession.REGULAR
-    elif PREMARKET_START <= minutes_since_midnight < MARKET_OPEN:
+    elif PREMARKET_START <= minutes_since_midnight < actual_open:
         return MarketSession.PREMARKET
-    elif MARKET_CLOSE <= minutes_since_midnight < AFTERHOURS_END:
+    elif actual_close <= minutes_since_midnight < AFTERHOURS_END:
         return MarketSession.AFTERHOURS
     else:
         return MarketSession.CLOSED

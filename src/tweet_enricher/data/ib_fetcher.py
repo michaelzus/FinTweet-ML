@@ -78,6 +78,66 @@ class IBHistoricalDataFetcher:
             self.ib.disconnect()
             self.logger.info("Disconnected from IB")
 
+    async def validate_contracts(
+        self,
+        symbols: List[str],
+        exchange: str = "SMART",
+        currency: str = "USD",
+        batch_size: int = 50,
+    ) -> tuple[List[str], List[str]]:
+        """
+        Validate which symbols have valid IB contracts.
+
+        Args:
+            symbols: List of stock ticker symbols to validate
+            exchange: Exchange (default: SMART)
+            currency: Currency (default: USD)
+            batch_size: Number of contracts to validate per batch
+
+        Returns:
+            Tuple of (valid_symbols, invalid_symbols)
+        """
+        valid_symbols: List[str] = []
+        invalid_symbols: List[str] = []
+        total = len(symbols)
+
+        if total == 0:
+            return valid_symbols, invalid_symbols
+
+        self.logger.info(f"Validating {total} contracts...")
+
+        # Process in batches
+        for batch_start in range(0, total, batch_size):
+            batch_end = min(batch_start + batch_size, total)
+            batch_symbols = symbols[batch_start:batch_end]
+
+            # Create contracts for this batch
+            contracts = [Stock(symbol, exchange, currency) for symbol in batch_symbols]
+
+            # Qualify all contracts in batch
+            try:
+                qualified = await self.ib.qualifyContractsAsync(*contracts)
+
+                # Check which contracts were successfully qualified
+                for symbol, contract in zip(batch_symbols, contracts):
+                    if contract.conId and contract.conId > 0:
+                        valid_symbols.append(symbol)
+                    else:
+                        invalid_symbols.append(symbol)
+                        self.logger.debug(f"Invalid contract: {symbol}")
+
+            except Exception as e:
+                self.logger.warning(f"Error validating batch: {e}")
+                # Mark entire batch as invalid on error
+                invalid_symbols.extend(batch_symbols)
+
+            # Small delay between batches
+            if batch_end < total:
+                await asyncio.sleep(0.5)
+
+        self.logger.info(f"Validation complete: {len(valid_symbols)} valid, {len(invalid_symbols)} invalid")
+        return valid_symbols, invalid_symbols
+
     async def fetch_historical_data(
         self,
         symbol: str,

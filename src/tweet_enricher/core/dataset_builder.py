@@ -79,12 +79,13 @@ OUTPUT_COLUMN_ORDER = [
     # Data quality
     "is_reliable_label",
     "tweet_hash",
-    # Debug (prices)
+    # Debug (prices and timing)
     "entry_price",
     "entry_price_flag",
     "price_next_open",
     "price_next_open_flag",
     "return_to_next_open",
+    "hours_to_next_open",  # Context for variable label timespan
     # Original tweet data
     "text",
 ]
@@ -269,17 +270,9 @@ class DatasetBuilder:
             intraday_df, daily_df_for_next_open, timestamp, session
         )
 
-        # Find closest daily bar for indicator calculation
-        daily_df_dates = daily_df.index.date
-
-        # Get the most recent bar before or on tweet date
-        valid_indices = [i for i, d in enumerate(daily_df_dates) if d <= tweet_date]
-
-        if not valid_indices:
-            logger.debug(f"No daily data before {tweet_date} for {ticker}")
-            return self._get_empty_features()
-
-        current_idx = valid_indices[-1]
+        # Use the most recent bar for indicator calculation
+        # Note: daily_df already filtered to dates < tweet_date above, so last index is correct
+        current_idx = len(daily_df) - 1
 
         # Calculate technical indicators
         indicators = self.indicators.calculate_all_indicators(daily_df, current_idx)
@@ -299,9 +292,15 @@ class DatasetBuilder:
         tweet_hash = self._compute_tweet_hash(tweet_row["text"])
 
         # Get next trading day's open price for 1-day labels
-        price_next_open, price_next_open_flag = self._get_price_next_open(
+        price_next_open, price_next_open_flag, next_open_dt = self._get_price_next_open(
             daily_df_for_next_open, timestamp
         )
+
+        # Calculate hours to next open (context for variable label timespan)
+        # This helps the model understand if label spans 18h (weekday) or 66h+ (weekend)
+        hours_to_next_open = None
+        if next_open_dt is not None:
+            hours_to_next_open = (next_open_dt - timestamp).total_seconds() / 3600
 
         # Calculate return to next open (using entry price as base)
         return_to_next_open = None
@@ -350,6 +349,7 @@ class DatasetBuilder:
             "price_next_open": price_next_open,
             "price_next_open_flag": price_next_open_flag,
             "return_to_next_open": return_to_next_open,
+            "hours_to_next_open": hours_to_next_open,
             "label_1d_3class": label_1d_3class,
         }
 
@@ -382,28 +382,32 @@ class DatasetBuilder:
         """
         timestamp = normalize_timestamp(timestamp)
 
-        # Defensive assertion: timestamp must be timezone-aware after normalization
-        assert timestamp.tzinfo is not None, "Timestamp must be timezone-aware after normalization"
+        # Validate timestamp is timezone-aware after normalization
+        if timestamp.tzinfo is None:
+            logger.warning("Timestamp missing timezone info after normalization, skipping")
+            return None, "invalid_timestamp"
 
         # For regular hours and extended hours - use intraday data
         if session in [MarketSession.REGULAR, MarketSession.PREMARKET, MarketSession.AFTERHOURS]:
             if intraday_df is not None and not intraday_df.empty:
-                # Defensive assertion: intraday data must be timezone-aware for correct comparison
-                assert intraday_df.index.tz is not None, (
-                    "Intraday data must be timezone-aware for correct timestamp comparison"
-                )
-                # Find first bar that starts AFTER tweet (realistic entry)
-                future_bars = intraday_df[intraday_df.index > timestamp]
+                # Validate intraday data timezone
+                if intraday_df.index.tz is None:
+                    logger.warning("Intraday data missing timezone, falling back to daily data")
+                else:
+                    # Find first bar that starts AFTER tweet (realistic entry)
+                    future_bars = intraday_df[intraday_df.index > timestamp]
 
-                if not future_bars.empty:
-                    entry_bar = future_bars.iloc[0]
-                    price = entry_bar["open"]
-                    return price, f"{session.value}_next_bar_open"
+                    if not future_bars.empty:
+                        entry_bar = future_bars.iloc[0]
+                        price = entry_bar["open"]
+                        return price, f"{session.value}_next_bar_open"
 
             # Fallback to next day's open
             tweet_date = timestamp.date()
-            # Defensive assertion for daily data
-            assert daily_df.index.tz is not None, "Daily data must be timezone-aware"
+            # Validate daily data timezone
+            if daily_df.index.tz is None:
+                logger.warning("Daily data missing timezone, cannot determine entry price")
+                return None, "invalid_daily_data_tz"
             future_daily = daily_df[daily_df.index.date > tweet_date]
             if not future_daily.empty:
                 price = future_daily.iloc[0]["open"]
@@ -412,8 +416,10 @@ class DatasetBuilder:
         # For closed market (overnight, weekends) - use next trading day open
         elif session == MarketSession.CLOSED:
             tweet_date = timestamp.date()
-            # Defensive assertion for daily data
-            assert daily_df.index.tz is not None, "Daily data must be timezone-aware"
+            # Validate daily data timezone
+            if daily_df.index.tz is None:
+                logger.warning("Daily data missing timezone, cannot determine entry price")
+                return None, "invalid_daily_data_tz"
             future_daily = daily_df[daily_df.index.date > tweet_date]
             if not future_daily.empty:
                 price = future_daily.iloc[0]["open"]
@@ -425,7 +431,7 @@ class DatasetBuilder:
         self,
         daily_df: pd.DataFrame,
         timestamp: datetime,
-    ) -> Tuple[Optional[float], str]:
+    ) -> Tuple[Optional[float], str, Optional[datetime]]:
         """
         Get next trading day's open price after tweet.
 
@@ -434,22 +440,25 @@ class DatasetBuilder:
             timestamp: Tweet timestamp
 
         Returns:
-            Tuple of (price, data_quality_flag)
+            Tuple of (price, data_quality_flag, next_open_datetime)
         """
         timestamp = normalize_timestamp(timestamp)
         tweet_date = timestamp.date()
 
-        # Defensive assertion: daily data must be timezone-aware
-        assert daily_df.index.tz is not None, "Daily data must be timezone-aware for correct date comparison"
+        # Validate daily data timezone
+        if daily_df.index.tz is None:
+            logger.warning("Daily data missing timezone, cannot determine next open price")
+            return None, "invalid_daily_data_tz", None
 
         # Find first trading day AFTER tweet date
         future_bars = daily_df[daily_df.index.date > tweet_date]
 
         if not future_bars.empty:
             next_day = future_bars.iloc[0]
-            return next_day["open"], "next_open_available"
+            next_open_dt = future_bars.index[0].to_pydatetime()
+            return next_day["open"], "next_open_available", next_open_dt
 
-        return None, "next_open_unavailable"
+        return None, "next_open_unavailable", None
 
     def _classify_return_3class(self, return_value: Optional[float]) -> Optional[str]:
         """
@@ -557,5 +566,6 @@ class DatasetBuilder:
             "price_next_open": None,
             "price_next_open_flag": "no_data",
             "return_to_next_open": None,
+            "hours_to_next_open": None,
             "label_1d_3class": None,
         }

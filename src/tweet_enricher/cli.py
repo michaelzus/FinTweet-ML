@@ -330,11 +330,12 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
     """
     Sync OHLCV data for all tickers in the tweet database.
 
-    Each ticker's data range:
-    - Start: first_tweet - 1 month (or --since date, whichever is later)
-    - End: last_tweet + 1 day
+    Flow:
+    1. Load unique tickers with date ranges from tweet DB
+    2. Filter EXCLUDED_TICKERS
+    3. Validate contracts via IB API (filter invalid symbols)
+    4. Fetch each valid ticker one-by-one with its specific date range
     """
-    from collections import defaultdict
     from datetime import date as date_cls
     from dateutil.relativedelta import relativedelta
 
@@ -353,7 +354,7 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
             logger.error(f"Invalid --since date format: {args.since}. Use YYYY-MM-DD")
             return 1
 
-    # Load tickers with their first and last appearance dates
+    # Step 1: Load tickers with their first and last appearance dates
     logger.info(f"Loading tickers from tweet database: {db_path}")
     database = TweetDatabase(db_path=db_path)
     ticker_date_ranges = database.get_tickers_with_date_range()
@@ -362,17 +363,17 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
         logger.error("No tickers found in tweet database")
         return 1
 
-    # Filter out excluded tickers
+    logger.info(f"Found {len(ticker_date_ranges)} unique tickers in database")
+
+    # Step 2: Filter out excluded tickers
     original_count = len(ticker_date_ranges)
     ticker_date_ranges = {t: d for t, d in ticker_date_ranges.items() if t not in EXCLUDED_TICKERS}
     excluded_count = original_count - len(ticker_date_ranges)
 
     if excluded_count > 0:
-        logger.info(f"Excluded {excluded_count} problematic tickers")
+        logger.info(f"Excluded {excluded_count} problematic tickers (EXCLUDED_TICKERS)")
 
     # Calculate per-ticker date ranges
-    # start: first_tweet - 1 month (clamped by --since)
-    # end: last_tweet + 1 day
     ticker_ranges: dict[str, tuple[date_cls, date_cls]] = {}
     for ticker, (first_dt, last_dt) in ticker_date_ranges.items():
         # Start: 1 month before first tweet
@@ -397,28 +398,13 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
 
     logger.info("")
     logger.info("=" * 80)
-    logger.info(f"TWEET-DB OHLCV SYNC: {len(ticker_ranges)} tickers from tweet database")
+    logger.info(f"TWEET-DB OHLCV SYNC: {len(ticker_ranges)} tickers")
     logger.info(f"Overall date range: {earliest_start} to {latest_end}")
     if since_date:
         logger.info(f"--since filter: {since_date}")
     logger.info("=" * 80)
 
-    # Group tickers by their start month for efficient batch fetching
-    # Key: (year, month) -> list of (ticker, start_date, end_date)
-    month_groups: dict[tuple, list] = defaultdict(list)
-    for ticker, (start_date, end_date) in ticker_ranges.items():
-        month_key = (start_date.year, start_date.month)
-        month_groups[month_key].append((ticker, start_date, end_date))
-
-    # Sort groups by date (oldest first)
-    sorted_months = sorted(month_groups.keys())
-
-    logger.info(f"Grouped tickers into {len(sorted_months)} month groups:")
-    for year, month in sorted_months:
-        tickers_in_group = month_groups[(year, month)]
-        logger.info(f"  {year}-{month:02d}: {len(tickers_in_group)} tickers")
-
-    # Initialize IB fetcher and DataCache
+    # Step 3: Connect to IB and validate contracts
     fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
     cache = DataCache(
         ib_fetcher=fetcher,
@@ -431,19 +417,48 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
         return 1
 
     try:
-        # Process each month group
-        for group_idx, (year, month) in enumerate(sorted_months, 1):
-            tickers_in_group = month_groups[(year, month)]
-            symbols = [t[0] for t in tickers_in_group]
+        # Validate all contracts
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("STEP 1: Validating contracts with IB...")
+        logger.info("=" * 80)
 
-            # Use the first day of the month as target start date for this group
-            group_start_date = date_cls(year, month, 1)
+        all_symbols = list(ticker_ranges.keys())
+        valid_symbols, invalid_symbols = await fetcher.validate_contracts(all_symbols)
 
-            # Find the max end date for this group
-            group_end_date = max(t[2] for t in tickers_in_group)
+        if invalid_symbols:
+            logger.info(f"Invalid contracts ({len(invalid_symbols)}): {', '.join(sorted(invalid_symbols)[:20])}")
+            if len(invalid_symbols) > 20:
+                logger.info(f"  ... and {len(invalid_symbols) - 20} more")
 
-            # Calculate duration from group start to group end
-            days_to_fetch = (group_end_date - group_start_date).days
+        # Filter to valid symbols only
+        ticker_ranges = {t: r for t, r in ticker_ranges.items() if t in valid_symbols}
+
+        if not ticker_ranges:
+            logger.error("No valid contracts found!")
+            return 1
+
+        logger.info(f"Proceeding with {len(ticker_ranges)} valid tickers")
+
+        # Step 4: Fetch each ticker one-by-one with its specific date range
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("STEP 2: Fetching OHLCV data (one ticker at a time)...")
+        logger.info("=" * 80)
+
+        # Import feather loaders to check cache coverage
+        from tweet_enricher.io.feather import load_daily_data, load_intraday_data
+
+        total_tickers = len(ticker_ranges)
+        fetched_daily = 0
+        fetched_intraday = 0
+        skipped_daily = 0
+        skipped_intraday = 0
+        failed = 0
+
+        for idx, (ticker, (start_date, end_date)) in enumerate(ticker_ranges.items(), 1):
+            # Calculate duration for this ticker
+            days_to_fetch = (end_date - start_date).days
             if days_to_fetch > 365:
                 years_count = (days_to_fetch // 365) + 1
                 duration = f"{years_count} Y"
@@ -452,59 +467,99 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
 
             trading_days = duration_to_trading_days(duration)
 
-            logger.info("")
-            logger.info("=" * 80)
-            logger.info(f"GROUP {group_idx}/{len(sorted_months)}: {year}-{month:02d} ({len(symbols)} tickers)")
-            logger.info(f"Date range: {group_start_date} to {group_end_date}, Duration: {duration}")
-            logger.info("=" * 80)
+            # Check if daily cache already covers the date range
+            daily_df = load_daily_data(ticker, Path(args.output_dir))
+            daily_needs_fetch = True
+            if daily_df is not None and not daily_df.empty:
+                cache_min = daily_df.index.min().date() if hasattr(daily_df.index.min(), "date") else daily_df.index.min()
+                cache_max = daily_df.index.max().date() if hasattr(daily_df.index.max(), "date") else daily_df.index.max()
+                if cache_min <= start_date and cache_max >= end_date:
+                    daily_needs_fetch = False
 
-            # Step 1: Fetch daily data for this group
-            logger.info("  Syncing DAILY data...")
-            await cache.prefetch_all_daily_data(
-                symbols=symbols,
-                max_date=ET.localize(datetime.combine(group_end_date, datetime.min.time())),
-                duration=duration,
-                batch_size=args.batch_size,
-            )
-
-            # Step 1b: Backfill daily
-            logger.info(f"  Backfilling DAILY data to {group_start_date}...")
-            await cache.backfill_daily_data(
-                symbols=symbols,
-                target_start_date=group_start_date,
-                batch_size=args.batch_size,
-            )
-
-            # Step 2: Fetch intraday data (unless --daily-only)
+            # Check if intraday cache already covers the date range
+            intraday_needs_fetch = True
             if not args.daily_only:
-                logger.info("  Syncing INTRADAY data...")
-                await cache.prefetch_all_intraday_data(
-                    symbols=symbols,
-                    max_date=ET.localize(datetime.combine(group_end_date, datetime.min.time())),
-                    total_days=min(trading_days, 200),
-                    delay_between_symbols=INTRADAY_FETCH_DELAY,
-                )
+                intraday_df = load_intraday_data(ticker, Path(args.intraday_dir))
+                if intraday_df is not None and not intraday_df.empty:
+                    cache_min = intraday_df.index.min().date() if hasattr(intraday_df.index.min(), "date") else intraday_df.index.min()
+                    cache_max = intraday_df.index.max().date() if hasattr(intraday_df.index.max(), "date") else intraday_df.index.max()
+                    if cache_min <= start_date and cache_max >= end_date:
+                        intraday_needs_fetch = False
 
-                # Backfill intraday if needed
-                if trading_days > 200:
-                    logger.info(f"  Backfilling INTRADAY data to {group_start_date}...")
-                    await cache.backfill_intraday_data(
-                        symbols=symbols,
-                        target_start_date=group_start_date,
-                        delay_between_symbols=INTRADAY_FETCH_DELAY,
+            # Skip if both caches are complete
+            if not daily_needs_fetch and (args.daily_only or not intraday_needs_fetch):
+                logger.debug(f"[{idx}/{total_tickers}] {ticker}: Cache complete, skipping")
+                skipped_daily += 1
+                if not args.daily_only:
+                    skipped_intraday += 1
+                continue
+
+            logger.info(f"[{idx}/{total_tickers}] {ticker}: {start_date} to {end_date} ({duration})")
+
+            try:
+                # Fetch daily data only if needed
+                if daily_needs_fetch:
+                    await cache.prefetch_all_daily_data(
+                        symbols=[ticker],
+                        max_date=datetime.combine(end_date, datetime.min.time()).replace(tzinfo=ET),
+                        duration=duration,
+                        batch_size=1,
                     )
+
+                    # Backfill daily if needed
+                    await cache.backfill_daily_data(
+                        symbols=[ticker],
+                        target_start_date=start_date,
+                        batch_size=1,
+                    )
+                    fetched_daily += 1
+                else:
+                    skipped_daily += 1
+
+                # Fetch intraday data (unless --daily-only)
+                if not args.daily_only:
+                    if intraday_needs_fetch:
+                        await cache.prefetch_all_intraday_data(
+                            symbols=[ticker],
+                            max_date=datetime.combine(end_date, datetime.min.time()).replace(tzinfo=ET),
+                            total_days=min(trading_days, 200),
+                            delay_between_symbols=0.5,
+                        )
+
+                        # Backfill intraday if needed
+                        if trading_days > 200:
+                            await cache.backfill_intraday_data(
+                                symbols=[ticker],
+                                target_start_date=start_date,
+                                delay_between_symbols=0.5,
+                            )
+                        fetched_intraday += 1
+                    else:
+                        skipped_intraday += 1
+
+            except Exception as e:
+                logger.warning(f"  Failed: {e}")
+                failed += 1
+
+            # Small delay between tickers (only if we fetched something)
+            if daily_needs_fetch or intraday_needs_fetch:
+                await asyncio.sleep(0.5)
 
         # Final Summary
         logger.info("")
         logger.info("=" * 80)
         logger.info("TWEET-DB SYNC COMPLETE")
         logger.info("=" * 80)
-        logger.info(f"Total tickers: {len(ticker_ranges)}")
-        logger.info(f"Month groups:  {len(sorted_months)}")
-        logger.info(f"Date range:    {earliest_start} to {latest_end}")
-        logger.info(f"Daily data:    {args.output_dir}/")
+        logger.info(f"Total tickers from DB: {original_count}")
+        logger.info(f"Excluded (config):     {excluded_count}")
+        logger.info(f"Invalid contracts:     {len(invalid_symbols)}")
+        logger.info(f"Skipped (cached):      {skipped_daily} daily, {skipped_intraday} intraday")
+        logger.info(f"Fetched:               {fetched_daily} daily, {fetched_intraday} intraday")
+        logger.info(f"Failed:                {failed}")
+        logger.info(f"Date range:            {earliest_start} to {latest_end}")
+        logger.info(f"Daily data:            {args.output_dir}/")
         if not args.daily_only:
-            logger.info(f"Intraday data: {args.intraday_dir}/")
+            logger.info(f"Intraday data:         {args.intraday_dir}/")
 
     finally:
         await fetcher.disconnect()
@@ -724,13 +779,11 @@ def cmd_twitter_export(args: argparse.Namespace) -> int:
         until = None
 
         if args.since:
-            since = datetime.strptime(args.since, "%Y-%m-%d")
-            since = ET.localize(since)
+            since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=ET)
             logger.info(f"Filtering from: {args.since}")
 
         if args.until:
-            until = datetime.strptime(args.until, "%Y-%m-%d")
-            until = ET.localize(until.replace(hour=23, minute=59, second=59))
+            until = datetime.strptime(args.until, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=ET)
             logger.info(f"Filtering until: {args.until}")
 
         # Export
@@ -781,9 +834,9 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         since = None
         until = None
         if args.since:
-            since = ET.localize(datetime.strptime(args.since, "%Y-%m-%d"))
+            since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=ET)
         if args.until:
-            until = ET.localize(datetime.strptime(args.until, "%Y-%m-%d").replace(hour=23, minute=59, second=59))
+            until = datetime.strptime(args.until, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=ET)
 
         tweets = database.get_processed_tweets(since=since, until=until)
         tweets_df = pd.DataFrame([
@@ -906,7 +959,7 @@ async def _enrich_data(args: argparse.Namespace) -> int:
 
     # Ensure max_date is timezone-aware
     if max_date.tzinfo is None:
-        max_date = ET.localize(max_date.to_pydatetime())
+        max_date = max_date.to_pydatetime().replace(tzinfo=ET)
     elif max_date.tzinfo != ET:
         max_date = max_date.tz_convert(ET)
 
@@ -933,7 +986,7 @@ async def _enrich_data(args: argparse.Namespace) -> int:
                         last_market_day = extended_schedule.index[-2].date()
                         logger.info(f"Using previous trading day: {last_market_day}")
 
-        last_market_datetime = ET.localize(datetime.combine(last_market_day, datetime.max.time()))
+        last_market_datetime = datetime.combine(last_market_day, datetime.max.time()).replace(tzinfo=ET)
         max_date = min(max_date, last_market_datetime)
         logger.info(f"Last closed market trading day: {last_market_day}")
     else:

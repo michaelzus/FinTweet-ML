@@ -434,13 +434,16 @@ class TestDatasetBuilderAssertions:
 
         et_timestamp = datetime(2025, 1, 15, 9, 45, 0, tzinfo=ET)
 
-        with pytest.raises(AssertionError, match="Intraday data must be timezone-aware"):
-            builder._get_entry_price(
-                naive_intraday,
-                et_daily,
-                et_timestamp,
-                MarketSession.REGULAR,
-            )
+        # Should gracefully fall back to daily data instead of raising AssertionError
+        # when intraday data has no timezone
+        price, flag = builder._get_entry_price(
+            naive_intraday,
+            et_daily,
+            et_timestamp,
+            MarketSession.REGULAR,
+        )
+        # Falls back to next day open since intraday data lacks timezone
+        assert "next_day_open" in flag or flag == "no_data_available"
 
     def test_entry_price_works_with_timezone_aware_data(self):
         """_get_entry_price should work with timezone-aware data."""
