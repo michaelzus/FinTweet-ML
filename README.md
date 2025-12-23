@@ -17,16 +17,20 @@ FinTweet-ML demonstrates a complete ML workflow for predicting stock movements f
 |-----------|-------------|
 | **Data Collection** | Twitter API + Interactive Brokers OHLCV |
 | **Feature Engineering** | Technical indicators, market context, text processing |
-| **Model** | Multi-modal FinBERT with frozen BERT layers |
+| **Model** | Multi-modal FinBERT with full fine-tuning |
 | **Evaluation** | Temporal validation, trading metrics |
 
-### Key Results
+### Key Results (V1 Model @ 70% Confidence)
 
 | Metric | Value |
 |--------|-------|
-| Test Accuracy | **42.8%** (vs 33.3% random) |
-| Information Coefficient | **0.054** (p=0.027) |
-| F1 Macro | 38.2% |
+| Test Accuracy | **42.3%** (vs 33.3% random) |
+| Information Coefficient | **0.070** (p=0.007) ✅ |
+| Directional Accuracy | **53.6%** |
+| Sharpe Ratio | **0.13** |
+| Annual Return | **+9.1%** |
+
+> **Key Finding**: Filtering to high-confidence predictions doubles IC from 0.034 → 0.070
 
 ---
 
@@ -67,7 +71,7 @@ flowchart TB
     end
     
     subgraph Processing[Processing]
-        Text --> BERT[FinBERT - frozen - 768d]
+        Text --> BERT[FinBERT - fine-tuned - 768d]
         Num --> Linear[Linear - 32d]
         Cat --> Embed[Embeddings - learned]
     end
@@ -96,10 +100,10 @@ flowchart TB
 - **Data leakage checks**: Automated validation scripts
 
 ### ML Training
-- **Pre-trained FinBERT**: Financial domain knowledge
-- **Frozen BERT layers**: Prevents overfitting on small datasets
+- **Pre-trained FinBERT**: Financial domain knowledge with full fine-tuning
 - **Multi-modal fusion**: Text + numerical + categorical features
 - **Temporal splits**: 80/10/10 for realistic evaluation
+- **Confidence filtering**: High-confidence predictions (>40%) for trading
 
 ### Evaluation
 - **Trading metrics**: Information Coefficient, directional accuracy
@@ -190,16 +194,17 @@ fintweet-ml evaluate --model models/final --data output/dataset.csv
 |----------|-------------|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and components |
 | [DATASET.md](docs/DATASET.md) | Data sources, features, labels |
-| [RESULTS.md](docs/RESULTS.md) | Training experiments and metrics |
+| [RESULTS.md](docs/RESULTS.md) | Training experiments, metrics, and confidence analysis |
 
 ---
 
 ## Key Findings
 
-1. **Frozen BERT outperforms fine-tuned** - Prevents overfitting on limited data
-2. **Technical indicators add value** - Especially volatility and volume features
-3. **Temporal splits are critical** - Random splits overestimate performance by ~5%
-4. **Data quality > quantity** - Filtered datasets outperform larger noisy ones
+1. **Confidence filtering is critical** - IC doubles (0.034 → 0.070) when filtering to >70% confidence
+2. **Better accuracy ≠ Better trading** - V3 has highest accuracy but worst trading metrics
+3. **Temporal splits are essential** - Random splits overestimate performance significantly
+4. **Full fine-tuning beats frozen BERT** - For trading signals, V1 (full) outperforms V2 (frozen)
+5. **Statistical significance matters** - Only V1 has significant IC (p < 0.05) at high confidence
 
 ---
 
