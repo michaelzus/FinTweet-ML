@@ -195,9 +195,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph Input[Input]
-        Tickers[Ticker List]
-        SP500[S&P 500]
-        Russell[Russell 1000]
+        TweetDB[(tweets.db)]
     end
     
     subgraph Fetcher[IB Fetcher]
@@ -210,9 +208,7 @@ flowchart LR
         Intraday[(Intraday Feather)]
     end
     
-    Tickers --> IBClient
-    SP500 --> IBClient
-    Russell --> IBClient
+    TweetDB --> |Tickers + date ranges| IBClient
     IBClient --> Batch
     Batch --> |1 day bars| Daily
     Batch --> |15 min bars| Intraday
