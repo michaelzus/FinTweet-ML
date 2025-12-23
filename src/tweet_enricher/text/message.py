@@ -1,10 +1,8 @@
-"""Discord export file parser and message processing."""
+"""Message processing and categorization utilities."""
 
 import re
-from pathlib import Path
-from typing import Dict, List
+from typing import List
 
-from tweet_enricher.config import EXCLUDED_TICKERS
 from tweet_enricher.text.cleaner import clean_for_finbert
 
 
@@ -324,23 +322,17 @@ class MessageProcessor:
         Returns:
             Cleaned text optimized for FinBERT processing
         """
-        # Remove Discord-specific noise patterns
-        clean = re.sub(r"\{Embed\}", "", text)
-        clean = re.sub(r"\{Attachments\}", "", clean)
-        clean = re.sub(r"https?://[^\s]+", "", clean)
-        clean = re.sub(r"TweetShift[^\n]*", "", clean)
-        clean = re.sub(r"Powered by [^\n]+", "", clean)
-        clean = re.sub(r"📷\d+", "", clean)
-        clean = re.sub(r"\[Tweeted\][^\n]*", "", clean)
+        # Remove URLs
+        clean = re.sub(r"https?://[^\s]+", "", text)
 
         # Clean up whitespace
         clean = "\n".join(line.strip() for line in clean.split("\n") if line.strip())
         clean = clean.strip()
 
-        # Remove escape characters (Discord escapes special chars)
+        # Remove escape characters
         clean = re.sub(r"\\([()[\]{}.,!?\-\'#+_])", r"\1", clean)
 
-        # Replace newlines with spaces for CSV
+        # Replace newlines with spaces
         clean = " ".join(clean.split("\n"))
 
         # Apply FinBERT-optimized cleaning (Unicode normalization, emoji mapping, etc.)
@@ -421,233 +413,3 @@ class MessageProcessor:
         """
         return bool(text and len(text) >= self.min_text_length and self.is_english(text))
 
-
-class DiscordParser:
-    """Parses Discord channel export files."""
-
-    TIMESTAMP_PATTERN = re.compile(r"\[(\d{2}/\d{2}/\d{4}\s+\d{1,2}:\d{2})\]\s+(.*)")
-
-    def __init__(self, processor: MessageProcessor, categorizer: MessageCategorizer):
-        """
-        Initialize Discord parser.
-
-        Args:
-            processor: Message processor instance
-            categorizer: Message categorizer instance
-        """
-        self.processor = processor
-        self.categorizer = categorizer
-
-    def parse_file(self, file_path: Path) -> List[Dict[str, str]]:
-        """
-        Parse Discord export file.
-
-        Args:
-            file_path: Path to Discord export file
-
-        Returns:
-            List of parsed messages
-        """
-        messages = []
-        current_message = None
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        # Skip header
-        start_idx = self._find_start_index(lines)
-
-        for i in range(start_idx, len(lines)):
-            line = lines[i]
-            timestamp_match = self.TIMESTAMP_PATTERN.match(line)
-
-            if timestamp_match:
-                # Save previous message
-                if current_message:
-                    messages.extend(self._process_message(current_message))
-
-                # Start new message
-                current_message = {
-                    "timestamp": timestamp_match.group(1),
-                    "username": timestamp_match.group(2).strip(),
-                    "text_lines": [],
-                }
-            elif current_message:
-                current_message["text_lines"].append(line)
-
-        # Process last message
-        if current_message:
-            messages.extend(self._process_message(current_message))
-
-        return messages
-
-    def _find_start_index(self, lines: List[str]) -> int:
-        """Find the index where messages start."""
-        for i, line in enumerate(lines):
-            if line.strip().startswith("["):
-                return i
-        return 0
-
-    def _clean_author(self, username: str) -> str:
-        """Remove service suffix from author name (e.g., '• TweetShift')."""
-        return username.split(" • ")[0].strip()
-
-    def _extract_content_from_embed(self, embed_text: str) -> str:
-        """Extract tweet content from inside an {Embed} block."""
-        lines = embed_text.strip().split("\n")
-        content_lines = []
-        skip_next_url = True  # Skip first URL line (tweet URL)
-
-        for line in lines:
-            line = line.strip()
-            # Skip author line: "Author (@handle) ✧" or "Author (@handle)"
-            if re.match(r"^[\w\s]+\(@\w+\)(\s*✧)?$", line):
-                continue
-            # Skip first URL line only (tweet URL), preserve subsequent URLs in content
-            if line.startswith("https://") or line.startswith("http://"):
-                if skip_next_url:
-                    skip_next_url = False
-                    continue
-                # Keep subsequent URLs - they may be part of the tweet content
-            # Skip footer patterns
-            if line in ["TweetShift", "X"] or line.startswith("TweetShift •"):
-                continue
-            # Skip empty lines at start
-            if not content_lines and not line:
-                continue
-            content_lines.append(line)
-
-        return "\n".join(content_lines)
-
-    def _process_message(self, message: Dict) -> List[Dict[str, str]]:
-        """Process a single message and extract data."""
-        full_text = "".join(message["text_lines"]).strip()
-
-        # Split at {Embed} to handle duplicates correctly
-        if "{Embed}" in full_text:
-            parts = full_text.split("{Embed}", 1)
-            before_embed = parts[0].strip()
-            inside_embed = parts[1].strip() if len(parts) > 1 else ""
-
-            # Remove [Tweeted](...) link from before_embed
-            before_embed = re.sub(r"\[Tweeted\]\([^)]+\)\s*", "", before_embed).strip()
-
-            # If substantial content before {Embed}, use it (Pattern B - long tweets)
-            # Otherwise, extract from inside {Embed} (Pattern A - short tweets)
-            if len(before_embed) > 50:
-                content_text = before_embed
-            else:
-                content_text = self._extract_content_from_embed(inside_embed)
-        else:
-            content_text = full_text
-
-        # Extract components from full_text (for URL extraction)
-        tickers = self.processor.extract_tickers(full_text)
-        tweet_url = self.processor.extract_tweet_url(full_text)
-        clean_text = self.processor.clean_text(content_text)
-
-        # Validate
-        if not self.processor.is_valid(clean_text):
-            return []
-
-        # Categorize
-        category = self.categorizer.categorize(clean_text)
-
-        # Create result entries
-        result = []
-        if tickers:
-            for ticker in tickers:
-                # Skip excluded tickers (problematic symbols that consistently fail in IBKR)
-                if ticker and ticker not in EXCLUDED_TICKERS:
-                    result.append(
-                        {
-                            "timestamp": message["timestamp"],
-                            "author": self._clean_author(message["username"]),
-                            "ticker": ticker,
-                            "tweet_url": tweet_url,
-                            "category": category,
-                            "text": clean_text,
-                        }
-                    )
-
-        return result
-
-
-class DiscordToCSVConverter:
-    """Main converter orchestrating the conversion process."""
-
-    def __init__(self, min_text_length: int = 60, deduplicate: bool = True):
-        """
-        Initialize converter.
-
-        Args:
-            min_text_length: Minimum text length to keep
-            deduplicate: Remove duplicate messages
-        """
-        self.processor = MessageProcessor(min_text_length)
-        self.categorizer = MessageCategorizer()
-        self.parser = DiscordParser(self.processor, self.categorizer)
-        self.deduplicate = deduplicate
-
-    def convert(
-        self,
-        input_file: Path,
-        output_file: Path,
-        ticker_filter_file: Path = None,
-        verbose: bool = True,
-    ) -> Dict[str, int]:
-        """
-        Convert Discord export to CSV.
-
-        Args:
-            input_file: Path to Discord export file
-            output_file: Path to output CSV file
-            ticker_filter_file: Optional ticker filter CSV
-            verbose: Print progress information
-
-        Returns:
-            Conversion statistics
-        """
-        from tweet_enricher.io.csv_writer import CSVWriter, TickerFilter
-
-        if verbose:
-            print(f"Reading Discord data from: {input_file}")
-
-        # Parse messages
-        messages = self.parser.parse_file(input_file)
-
-        if verbose:
-            print(f"Found {len(messages)} messages")
-
-        # Load ticker filter if provided
-        ticker_filter = None
-        if ticker_filter_file and ticker_filter_file.exists():
-            ticker_filter = TickerFilter.load_from_csv(ticker_filter_file)
-            if verbose:
-                print(f"Loaded {len(ticker_filter)} tickers from filter list")
-
-        # Write to CSV
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        if verbose:
-            print(f"Writing to CSV: {output_file}")
-
-        writer = CSVWriter(self.deduplicate, ticker_filter)
-        stats = writer.write(messages, output_file)
-
-        if verbose:
-            self._print_stats(stats, messages)
-
-        return stats
-
-    def _print_stats(self, stats: Dict[str, int], messages: List[Dict[str, str]]) -> None:
-        """Print conversion statistics."""
-        print("\nConversion complete!")
-
-        if stats["filtered"] > 0:
-            print(f"Filtered out {stats['filtered']} messages (tickers not in filter list)")
-
-        if stats["duplicates"] > 0:
-            print(f"Removed {stats['duplicates']} duplicate messages")
-
-        print(f"Written {stats['written']} unique messages to CSV")

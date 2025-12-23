@@ -41,7 +41,6 @@ from tweet_enricher.data.tickers import (
     fetch_sp500_tickers,
     filter_tickers_by_volume,
 )
-from tweet_enricher.parsers.discord import DiscordToCSVConverter
 from tweet_enricher.twitter.database import TweetDatabase
 from tweet_enricher.twitter.sync import SyncService
 
@@ -130,45 +129,6 @@ def duration_to_trading_days(duration: str) -> int:
     weeks = calendar_days // 7
     trading_days = calendar_days - (weeks * 2)
     return trading_days
-
-
-# ============================================================================
-# Subcommand: convert (Utility)
-# ============================================================================
-def cmd_convert(args: argparse.Namespace) -> int:
-    """Convert Discord export to CSV."""
-    setup_logging(args.verbose)
-
-    input_path = Path(args.input)
-    output_path = Path(args.output)
-
-    if not input_path.exists():
-        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
-        return 1
-
-    filter_path = Path(args.filter) if args.filter else None
-    if filter_path and not filter_path.exists():
-        print(f"Error: Filter file not found: {filter_path}", file=sys.stderr)
-        return 1
-
-    try:
-        converter = DiscordToCSVConverter(
-            min_text_length=args.min_length,
-            deduplicate=not args.no_dedup,
-        )
-
-        converter.convert(
-            input_file=input_path,
-            output_file=output_path,
-            ticker_filter_file=filter_path,
-            verbose=not args.quiet,
-        )
-
-        return 0
-
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
 
 # ============================================================================
@@ -1151,7 +1111,6 @@ Commands:
   prepare    Dataset preparation - offline, no API calls (Flow 3)
   train      Model training (Flow 4)
   evaluate   Model evaluation (Flow 4)
-  convert    Discord export conversion (utility)
 
 Examples:
   # Collect OHLCV data
@@ -1380,25 +1339,6 @@ Examples:
     evaluate_parser.add_argument("--output-dir", help="Directory to save evaluation results")
     evaluate_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     evaluate_parser.set_defaults(func=cmd_evaluate)
-
-    # ============ convert subcommand (Utility) ============
-    convert_parser = subparsers.add_parser(
-        "convert",
-        help="Convert Discord channel export to CSV (utility)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  fintweet-ml convert -i discord_data.txt -o output.csv
-        """,
-    )
-    convert_parser.add_argument("-i", "--input", type=str, required=True, help="Input Discord export file")
-    convert_parser.add_argument("-o", "--output", type=str, required=True, help="Output CSV file")
-    convert_parser.add_argument("-f", "--filter", type=str, help="Ticker filter CSV file (with 'symbol' column)")
-    convert_parser.add_argument("--no-dedup", action="store_true", help="Disable duplicate message removal")
-    convert_parser.add_argument("--min-length", type=int, default=60, help="Minimum text length to keep (default: 60)")
-    convert_parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
-    convert_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
-    convert_parser.set_defaults(func=cmd_convert)
 
     # ============ filter-volume subcommand (Utility) ============
     filter_parser = subparsers.add_parser(

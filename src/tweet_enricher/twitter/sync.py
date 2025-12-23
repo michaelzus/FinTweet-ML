@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from tweet_enricher.config import TWITTER_ACCOUNTS, TWITTER_RATE_LIMIT_DELAY
 from tweet_enricher.utils.timezone import ET
-from tweet_enricher.parsers.discord import MessageCategorizer, MessageProcessor
+from tweet_enricher.text.message import MessageCategorizer, MessageProcessor
 from tweet_enricher.text.cleaner import clean_for_finbert
 from tweet_enricher.twitter.client import Tweet, TwitterClient
 from tweet_enricher.twitter.database import ProcessedTweet, TweetDatabase

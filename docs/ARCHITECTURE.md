@@ -100,9 +100,6 @@ fintweet-ml evaluate --model models/final --data output/dataset.csv
 ### Utility Commands
 
 ```bash
-# Convert Discord export to CSV
-fintweet-ml convert -i discord_data.txt -o output.csv
-
 # Filter tickers by volume
 fintweet-ml filter-volume --min-volume 1000000 --output filtered.csv
 ```
@@ -130,8 +127,6 @@ src/
 │   │   ├── client.py            # Twitter API client (Flow 2)
 │   │   ├── database.py          # SQLite storage
 │   │   └── sync.py              # Incremental sync
-│   ├── parsers/
-│   │   └── discord.py           # Discord export parser
 │   ├── io/
 │   │   ├── feather.py           # Feather file I/O
 │   │   └── csv_writer.py        # CSV output
