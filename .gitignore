@@ -49,13 +49,9 @@ dmypy.json
 output/*
 !output/.gitkeep
 
-# Input files (Discord exports - keep structure, ignore content)
-input/discord/*.txt
-
 # Data cache directories (persistent disk cache for OHLCV data)
 data/daily/*
 data/intraday/*
-data/intraday_stop/
 !data/daily/.gitkeep
 !data/intraday/.gitkeep
 

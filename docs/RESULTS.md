@@ -16,10 +16,10 @@ quadrantChart
     title Model Trade-offs: Classification vs Trading
     x-axis Low Accuracy --> High Accuracy
     y-axis Poor Trading --> Good Trading
-    quadrant-1 Ideal (neither achieved)
-    quadrant-2 Good Trading, Low Accuracy
+    quadrant-1 Ideal
+    quadrant-2 Good Trading
     quadrant-3 Poor at Both
-    quadrant-4 High Accuracy, Poor Trading
+    quadrant-4 High Accuracy Only
     V1: [0.55, 0.45]
     V2: [0.45, 0.75]
     V3: [0.65, 0.15]
