@@ -9,28 +9,30 @@
 
 ## 📊 Executive Summary
 
-Three model variants were trained with different hyperparameters. Key finding: **Better classification accuracy does not equal better trading performance**.
+Three model variants were trained with different hyperparameters. Key finding: **Confidence filtering transforms V1 into a profitable model**.
 
 ```mermaid
 quadrantChart
-    title Model Trade-offs: Classification vs Trading
+    title Model Trade-offs with Confidence Filtering
     x-axis Low Accuracy --> High Accuracy
     y-axis Poor Trading --> Good Trading
     quadrant-1 Ideal
     quadrant-2 Good Trading
     quadrant-3 Poor at Both
     quadrant-4 High Accuracy Only
-    V1: [0.55, 0.45]
-    V2: [0.45, 0.75]
-    V3: [0.65, 0.15]
+    V1 base: [0.45, 0.40]
+    V2 base: [0.35, 0.55]
+    V3 base: [0.55, 0.10]
+    V1 40pct conf: [0.50, 0.85]
+    V1 70pct conf: [0.60, 0.80]
 ```
 
 | Aspect | Recommended Model |
 |--------|-------------------|
 | **Classification Accuracy** | V3 (41.92%) |
-| **Trading Profitability** | V2 (Sharpe: -0.03) |
-| **Statistical Significance** | V1 (IC p=0.025) |
-| **Overall Best** | **V1** (balanced) |
+| **Trading Profitability** | V1 @ 40% conf (Sharpe: +0.15) ✅ |
+| **Statistical Significance** | V1 @ 70% conf (IC: 0.070, p=0.007) ✅ |
+| **Overall Best** | **V1 with confidence filtering** |
 
 ---
 
