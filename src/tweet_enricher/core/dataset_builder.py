@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 import pandas as pd
+from tqdm import tqdm
 
 from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache_reader import CacheReader, ValidationReport
@@ -158,6 +159,7 @@ class DatasetBuilder:
         tweets_df: pd.DataFrame,
         skip_missing: bool = True,
         verbose: bool = True,
+        show_progress: bool = True,
     ) -> pd.DataFrame:
         """
         Build enriched dataset from tweets and cached OHLCV data.
@@ -165,14 +167,12 @@ class DatasetBuilder:
         Args:
             tweets_df: DataFrame with tweets (required columns: timestamp, ticker, author, category, text)
             skip_missing: If True, skip tweets with missing OHLCV data. If False, raise error.
-            verbose: If True, log progress information
+            verbose: If True, log final summary information
+            show_progress: If True, show tqdm progress bar
 
         Returns:
             DataFrame with enriched data ready for training
         """
-        if verbose:
-            logger.info(f"Building dataset from {len(tweets_df)} tweets...")
-
         # Preload data for all tickers
         unique_tickers = tweets_df["ticker"].unique().tolist()
         if "SPY" not in unique_tickers:
@@ -180,12 +180,21 @@ class DatasetBuilder:
 
         self.cache.preload_symbols(unique_tickers)
 
-        # Process each tweet
+        # Process each tweet with progress bar
         results = []
         processed = 0
         skipped = 0
 
-        for idx, tweet_row in tweets_df.iterrows():
+        pbar = tqdm(
+            tweets_df.iterrows(),
+            total=len(tweets_df),
+            desc="Building dataset",
+            disable=not show_progress,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
+
+        for idx, tweet_row in pbar:
             result = self._process_tweet(tweet_row)
 
             if result["entry_price"] is None and skip_missing:
@@ -201,11 +210,8 @@ class DatasetBuilder:
             results.append(result)
             processed += 1
 
-            if verbose and processed % 100 == 0:
-                logger.info(f"Processed {processed} tweets...")
-
         if verbose:
-            logger.info(f"Dataset built: {processed} successful, {skipped} skipped")
+            print(f"Dataset: {processed} successful, {skipped} skipped")
 
         # Create output DataFrame
         output_df = pd.DataFrame(results)
@@ -217,7 +223,7 @@ class DatasetBuilder:
         filtered_count = initial_count - len(output_df)
 
         if verbose and filtered_count > 0:
-            logger.info(f"Filtered {filtered_count} rows with invalid/unreliable labels")
+            print(f"Filtered {filtered_count} rows with invalid/unreliable labels")
 
         # Reorder columns for readability
         column_order = [col for col in OUTPUT_COLUMN_ORDER if col in output_df.columns]

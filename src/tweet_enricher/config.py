@@ -65,6 +65,7 @@ EXCLUDED_TICKERS = {
     "BRK.B",  # Should be BRK-B
     "BF",  # Should be BF-B
     "BF.B",  # Should be BF-B
+    "LEN.B",  # Should be LEN-B
     # Crypto/AI tokens (not stocks)
     "AITECH",
     "BLENDR",

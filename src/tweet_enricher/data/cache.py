@@ -1,13 +1,12 @@
 """Data caching layer for daily and intraday OHLCV data."""
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
-
-from datetime import date
+from tqdm import tqdm
 
 from tweet_enricher.config import (
     DAILY_DATA_DIR,
@@ -87,6 +86,7 @@ class DataCache:
         max_date: datetime,
         duration: str = "3 M",
         batch_size: int = 50,
+        quiet: bool = False,
     ) -> None:
         """
         Pre-fetch daily data for all symbols using disk cache with parallel batch fetching.
@@ -101,6 +101,7 @@ class DataCache:
             max_date: Maximum date for data range
             duration: Full duration string (default: 3 M) - used for initial fetch
             batch_size: Number of symbols to fetch per batch (default: 50)
+            quiet: Suppress verbose output, show only progress bars and errors
         """
         loaded_from_cache = 0
         fetched_full = 0
@@ -111,15 +112,21 @@ class DataCache:
         max_date_normalized = normalize_timestamp(max_date)
         target_date = max_date_normalized.date() if hasattr(max_date_normalized, "date") else max_date_normalized
 
-        # ========== PHASE 1: Check all caches and categorize ==========
-        self.logger.info("  Phase 1: Checking caches...")
+        # Phase 1: Check all caches and categorize
+        cached_fresh: list = []
+        needs_full_fetch: list = []
+        needs_incremental: list = []
+        incremental_info: Dict[str, Tuple[pd.DataFrame, int]] = {}
 
-        cached_fresh: list = []  # Symbols with up-to-date cache
-        needs_full_fetch: list = []  # Symbols needing full fetch (no cache or too old)
-        needs_incremental: list = []  # Symbols needing incremental update
-        incremental_info: Dict[str, Tuple[pd.DataFrame, int]] = {}  # symbol -> (cached_df, days_missing)
+        pbar_check = tqdm(
+            symbols,
+            desc="Checking cache",
+            disable=quiet,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+        )
 
-        for symbol in symbols:
+        for symbol in pbar_check:
             cached_df = load_daily_data(symbol, self.daily_dir)
 
             if cached_df is None:
@@ -129,29 +136,20 @@ class DataCache:
                 cached_date = cached_max_date.date() if hasattr(cached_max_date, "date") else cached_max_date
 
                 if cached_date >= target_date:
-                    # Cache is fresh
                     cached_fresh.append(symbol)
                     self.daily_data_cache[symbol] = cached_df
                     loaded_from_cache += 1
                 else:
                     days_missing = (target_date - cached_date).days
                     if days_missing > 90:
-                        # Cache too old, treat as full fetch
                         needs_full_fetch.append(symbol)
                     else:
-                        # Needs incremental update
                         needs_incremental.append(symbol)
                         incremental_info[symbol] = (cached_df, days_missing)
 
-        self.logger.info(
-            f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_full_fetch)} full fetch, {len(needs_incremental)} incremental"
-        )
-
-        # ========== PHASE 2: Batch fetch symbols needing full data ==========
+        # Phase 2: Batch fetch symbols needing full data
         if needs_full_fetch:
-            self.logger.info(f"  Phase 2: Fetching {len(needs_full_fetch)} symbols (full data, {duration})...")
 
-            # Callback to save immediately after each batch (preserves progress on interrupt)
             def save_daily_full_batch(batch_data: Dict[str, pd.DataFrame]) -> None:
                 nonlocal fetched_full
                 for symbol, df in batch_data.items():
@@ -167,35 +165,26 @@ class DataCache:
                 use_rth=True,
                 batch_size=batch_size,
                 on_batch_complete=save_daily_full_batch,
+                show_progress=not quiet,
             )
 
-            # Count failures (symbols that weren't saved by callback)
             failed = len(needs_full_fetch) - fetched_full
 
-            self.logger.info(f"  Phase 2 complete: {fetched_full} fetched, {failed} failed")
-
-        # ========== PHASE 3: Batch fetch incremental updates ==========
+        # Phase 3: Batch fetch incremental updates
         if needs_incremental:
-            self.logger.info(f"  Phase 3: Fetching {len(needs_incremental)} incremental updates...")
-
-            # For incremental, we fetch with a common duration that covers all
             max_days_missing = max(info[1] for info in incremental_info.values())
-            incremental_duration = f"{max_days_missing + 10} D"  # +10 days safety buffer
+            incremental_duration = f"{max_days_missing + 10} D"
 
-            # Callback to merge and save immediately after each batch
             def save_daily_incremental_batch(batch_data: Dict[str, pd.DataFrame]) -> None:
                 nonlocal updated_incremental, loaded_from_cache
                 for symbol, df in batch_data.items():
                     if symbol not in incremental_info:
                         continue
                     cached_df, _ = incremental_info[symbol]
-                    # Normalize cached_df to ensure timezone-aware index for comparison
                     cached_df = normalize_dataframe_timezone(cached_df)
                     cached_max_date = cached_df.index.max()
 
                     normalized_df = normalize_dataframe_timezone(df)
-
-                    # Merge with cached data (keep only new rows)
                     new_rows = normalized_df[normalized_df.index > cached_max_date]
 
                     if not new_rows.empty:
@@ -207,7 +196,6 @@ class DataCache:
                         self.daily_data_cache[symbol] = merged_df
                         updated_incremental += 1
                     else:
-                        # No new data, use cached
                         self.daily_data_cache[symbol] = cached_df
                         loaded_from_cache += 1
 
@@ -218,27 +206,20 @@ class DataCache:
                 use_rth=True,
                 batch_size=batch_size,
                 on_batch_complete=save_daily_incremental_batch,
+                show_progress=not quiet,
             )
 
-            # Handle symbols that failed to fetch (use stale cache)
             for symbol in needs_incremental:
                 if symbol not in self.daily_data_cache:
                     cached_df, _ = incremental_info[symbol]
                     self.daily_data_cache[symbol] = cached_df
                     loaded_from_cache += 1
 
-            self.logger.info(f"  Phase 3 complete: {updated_incremental} updated")
-
-        # ========== Summary ==========
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Daily Data Summary:")
-        self.logger.info(f"   - Loaded from cache: {loaded_from_cache}")
-        self.logger.info(f"   - Fetched full: {fetched_full}")
-        self.logger.info(f"   - Updated incremental: {updated_incremental}")
-        self.logger.info(f"   - Failed: {failed}")
-        self.logger.info(f"   - Total in memory cache: {len(self.daily_data_cache)}")
-        self.logger.info("=" * 80)
+        # Summary - print only errors and final summary
+        if failed > 0 and not quiet:
+            self.logger.warning(f"Daily sync: {failed} symbols failed")
+        if not quiet:
+            print(f"Daily: {loaded_from_cache} cached, {fetched_full} fetched, {updated_incremental} updated")
 
     async def prefetch_all_intraday_data(
         self,
@@ -246,6 +227,7 @@ class DataCache:
         max_date: datetime,
         total_days: int = INTRADAY_TOTAL_DAYS,
         delay_between_symbols: float = INTRADAY_FETCH_DELAY,
+        quiet: bool = False,
     ) -> None:
         """
         Pre-fetch intraday data for all symbols with incremental update support.
@@ -260,6 +242,7 @@ class DataCache:
             max_date: Maximum date for data range
             total_days: Days of history to fetch for full fetch (default: 200)
             delay_between_symbols: Seconds between requests (default: 2.0)
+            quiet: Suppress verbose output, show only progress bars and errors
         """
         loaded_from_cache = 0
         fetched_full = 0
@@ -270,13 +253,11 @@ class DataCache:
         max_date_normalized = normalize_timestamp(max_date)
         target_date = max_date_normalized.date() if hasattr(max_date_normalized, "date") else max_date_normalized
 
-        # ========== PHASE 1: Check caches and categorize ==========
-        self.logger.info("  Phase 1: Checking caches...")
-
+        # Phase 1: Check caches and categorize
         cached_fresh: list = []
         needs_full_fetch: list = []
         needs_incremental: list = []
-        incremental_info: Dict[str, Tuple[pd.DataFrame, int]] = {}  # symbol -> (cached_df, days_missing)
+        incremental_info: Dict[str, Tuple[pd.DataFrame, int]] = {}
 
         for symbol in symbols:
             cached_df = load_intraday_data(symbol, self.intraday_dir)
@@ -288,7 +269,6 @@ class DataCache:
             cached_max_date = cached_df.index.max()
             cached_date = cached_max_date.date() if hasattr(cached_max_date, "date") else cached_max_date
 
-            # Check if cache is fresh (has data up to target date)
             is_fresh = False
             if cached_date > target_date:
                 is_fresh = True
@@ -302,23 +282,15 @@ class DataCache:
                 self.intraday_data_cache[symbol] = cached_df
                 loaded_from_cache += 1
             else:
-                # Calculate days missing
                 days_missing = (target_date - cached_date).days
                 if days_missing > 30:
-                    # Cache too old, do full fetch
                     needs_full_fetch.append(symbol)
                 else:
-                    # Needs incremental update
                     needs_incremental.append(symbol)
                     incremental_info[symbol] = (cached_df, days_missing)
 
-        self.logger.info(
-            f"  Phase 1 complete: {len(cached_fresh)} fresh, {len(needs_full_fetch)} full fetch, " f"{len(needs_incremental)} incremental"
-        )
-
-        # ========== PHASE 2: Fetch full data ==========
+        # Phase 2: Fetch full data
         if needs_full_fetch:
-            self.logger.info(f"  Phase 2: Fetching {len(needs_full_fetch)} symbols ({total_days} days each)...")
 
             def save_symbol_full(symbol: str, df: pd.DataFrame) -> None:
                 nonlocal fetched_full
@@ -334,18 +306,15 @@ class DataCache:
                 use_rth=False,
                 delay_between_symbols=delay_between_symbols,
                 on_symbol_complete=save_symbol_full,
+                show_progress=not quiet,
             )
 
             failed = len(needs_full_fetch) - fetched_full
-            self.logger.info(f"  Phase 2 complete: {fetched_full} fetched, {failed} failed")
 
-        # ========== PHASE 3: Fetch incremental updates ==========
+        # Phase 3: Fetch incremental updates
         if needs_incremental:
-            # Calculate optimal fetch duration (max days missing + buffer)
             max_days_missing = max(info[1] for info in incremental_info.values())
-            incremental_days = max_days_missing + 5  # +5 days safety buffer
-
-            self.logger.info(f"  Phase 3: Fetching {len(needs_incremental)} incremental updates ({incremental_days} days each)...")
+            incremental_days = max_days_missing + 5
 
             def save_symbol_incremental(symbol: str, df: pd.DataFrame) -> None:
                 nonlocal updated_incremental, loaded_from_cache
@@ -353,13 +322,10 @@ class DataCache:
                     return
 
                 cached_df, _ = incremental_info[symbol]
-                # Normalize cached_df to ensure timezone-aware index for comparison
                 cached_df = normalize_dataframe_timezone(cached_df)
                 cached_max_date = cached_df.index.max()
 
                 normalized_df = normalize_dataframe_timezone(df)
-
-                # Merge with cached data (keep only new rows)
                 new_rows = normalized_df[normalized_df.index > cached_max_date]
 
                 if not new_rows.empty:
@@ -371,7 +337,6 @@ class DataCache:
                     self.intraday_data_cache[symbol] = merged_df
                     updated_incremental += 1
                 else:
-                    # No new data, use cached
                     self.intraday_data_cache[symbol] = cached_df
                     loaded_from_cache += 1
 
@@ -382,34 +347,28 @@ class DataCache:
                 use_rth=False,
                 delay_between_symbols=delay_between_symbols,
                 on_symbol_complete=save_symbol_incremental,
+                show_progress=not quiet,
             )
 
-            # Handle symbols that failed to fetch (use stale cache)
             for symbol in needs_incremental:
                 if symbol not in self.intraday_data_cache:
                     cached_df, _ = incremental_info[symbol]
                     self.intraday_data_cache[symbol] = normalize_dataframe_timezone(cached_df)
                     loaded_from_cache += 1
 
-            self.logger.info(f"  Phase 3 complete: {updated_incremental} updated")
-
-        # ========== Summary ==========
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Intraday Data Summary:")
-        self.logger.info(f"   - Loaded from cache: {loaded_from_cache}")
-        self.logger.info(f"   - Fetched full: {fetched_full}")
-        self.logger.info(f"   - Updated incremental: {updated_incremental}")
-        self.logger.info(f"   - Failed: {failed}")
-        self.logger.info(f"   - Total in memory cache: {len(self.intraday_data_cache)}")
-        self.logger.info("=" * 80)
+        # Summary - print only errors and final summary
+        if failed > 0 and not quiet:
+            self.logger.warning(f"Intraday sync: {failed} symbols failed")
+        if not quiet:
+            print(f"Intraday: {loaded_from_cache} cached, {fetched_full} fetched, {updated_incremental} updated")
 
     async def backfill_intraday_data(
         self,
         symbols: list,
         target_start_date: date,
         delay_between_symbols: float = INTRADAY_FETCH_DELAY,
-        chunk_size: int = 180,  # Max days per chunk (safe limit for IB)
+        chunk_size: int = 180,
+        quiet: bool = False,
     ) -> None:
         """
         Backfill historical intraday data by fetching in chunks.
@@ -425,6 +384,7 @@ class DataCache:
             target_start_date: Target start date for historical data
             delay_between_symbols: Seconds between requests (default: 2.0)
             chunk_size: Max days per fetch request (default: 180)
+            quiet: Suppress verbose output, show only progress bars and errors
         """
         import asyncio
 
@@ -433,23 +393,15 @@ class DataCache:
         skipped_already_covered = 0
         failed = 0
 
-        self.logger.info("=" * 80)
-        self.logger.info(f"BACKFILL INTRADAY: Fetching historical data back to {target_start_date}")
-        self.logger.info(f"  (fetching in {chunk_size}-day chunks)")
-        self.logger.info("=" * 80)
-
         # Phase 1: Analyze existing caches
-        self.logger.info("  Phase 1: Analyzing existing caches...")
-
         needs_backfill: list = []
-        backfill_info: Dict[str, Tuple[pd.DataFrame, date]] = {}  # symbol -> (cached_df, min_date)
+        backfill_info: Dict[str, Tuple[pd.DataFrame, date]] = {}
 
         for symbol in symbols:
             cached_df = load_intraday_data(symbol, self.intraday_dir)
 
             if cached_df is None:
                 skipped_no_cache += 1
-                self.logger.debug(f"  {symbol}: No cache found, skipping")
                 continue
 
             cached_min_date = cached_df.index.min()
@@ -457,49 +409,39 @@ class DataCache:
 
             if cached_min_date_only <= target_start_date:
                 skipped_already_covered += 1
-                self.logger.debug(f"  {symbol}: Already has data from {cached_min_date_only}, skipping")
                 continue
 
             needs_backfill.append(symbol)
             backfill_info[symbol] = (cached_df, cached_min_date_only)
-            days_needed = (cached_min_date_only - target_start_date).days
-            self.logger.debug(f"  {symbol}: Needs ~{days_needed} days of backfill")
-
-        self.logger.info(
-            f"  Phase 1 complete: {len(needs_backfill)} need backfill, "
-            f"{skipped_no_cache} no cache, {skipped_already_covered} already covered"
-        )
 
         if not needs_backfill:
-            self.logger.info("  Nothing to backfill!")
+            if not quiet:
+                print("Intraday backfill: nothing to do")
             return
 
         # Phase 2: Fetch historical data in chunks and merge
-        self.logger.info(f"  Phase 2: Backfilling {len(needs_backfill)} symbols in chunks...")
+        pbar = tqdm(
+            enumerate(needs_backfill),
+            total=len(needs_backfill),
+            desc="Backfill intraday",
+            disable=quiet,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
 
-        for i, symbol in enumerate(needs_backfill):
+        for i, symbol in pbar:
+            pbar.set_postfix_str(symbol, refresh=False)
             cached_df, current_min_date = backfill_info[symbol]
             cached_df = normalize_dataframe_timezone(cached_df)
-
-            total_days_needed = (current_min_date - target_start_date).days
-            chunks_needed = (total_days_needed // chunk_size) + 1
-
-            self.logger.info(f"  [{i + 1}/{len(needs_backfill)}] {symbol}: {total_days_needed} days needed (~{chunks_needed} chunks)")
 
             chunk_num = 0
             symbol_failed = False
 
             while current_min_date > target_start_date:
                 chunk_num += 1
-
-                # Calculate chunk duration
-                days_remaining = (current_min_date - target_start_date).days + 5  # +5 buffer
+                days_remaining = (current_min_date - target_start_date).days + 5
                 fetch_days = min(days_remaining, chunk_size)
-
-                # IB's endDateTime format with timezone
                 end_datetime = current_min_date.strftime("%Y%m%d 04:00:00 US/Eastern")
-
-                self.logger.info(f"    Chunk {chunk_num}: Fetching {fetch_days} D ending at {current_min_date}")
 
                 df = await self.ib_fetcher.fetch_historical_data(
                     symbol=symbol,
@@ -510,65 +452,48 @@ class DataCache:
                 )
 
                 if df is None or df.empty:
-                    self.logger.warning(f"    {symbol}: Chunk {chunk_num} failed, stopping backfill for this symbol")
+                    if not quiet:
+                        self.logger.warning(f"{symbol}: Chunk {chunk_num} failed")
                     symbol_failed = True
                     break
 
-                # Normalize and merge
                 normalized_df = normalize_dataframe_timezone(df)
-
-                # Keep only rows BEFORE current min (avoid duplicates)
                 cached_min_ts = cached_df.index.min()
                 new_rows = normalized_df[normalized_df.index < cached_min_ts]
 
                 if new_rows.empty:
-                    self.logger.info(f"    {symbol}: No new data in chunk {chunk_num}, backfill complete")
                     break
 
-                # Merge: prepend new rows
                 cached_df = pd.concat([new_rows, cached_df])
                 cached_df = cached_df.sort_index()
                 cached_df = cached_df[~cached_df.index.duplicated(keep="last")]
-
-                # Update current min date for next chunk
                 current_min_date = cached_df.index.min().date()
 
-                self.logger.info(f"    Added {len(new_rows)} rows, new min date: {current_min_date}")
-
-                # Save after each chunk (progress preserved on interrupt)
                 save_intraday_data(symbol, cached_df, self.intraday_dir)
                 self.intraday_data_cache[symbol] = cached_df
 
-                # Delay between chunks
                 await asyncio.sleep(delay_between_symbols)
 
             if symbol_failed:
                 failed += 1
             else:
                 backfilled += 1
-                final_min = cached_df.index.min().date()
-                final_max = cached_df.index.max().date()
-                self.logger.info(f"  {symbol}: Backfill complete! Range: {final_min} to {final_max}")
 
-            # Delay between symbols
             if i < len(needs_backfill) - 1:
                 await asyncio.sleep(delay_between_symbols)
 
         # Summary
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Intraday Backfill Summary:")
-        self.logger.info(f"   - Backfilled: {backfilled}")
-        self.logger.info(f"   - Skipped (no cache): {skipped_no_cache}")
-        self.logger.info(f"   - Skipped (already covered): {skipped_already_covered}")
-        self.logger.info(f"   - Failed: {failed}")
-        self.logger.info("=" * 80)
+        if failed > 0 and not quiet:
+            self.logger.warning(f"Intraday backfill: {failed} symbols failed")
+        if not quiet:
+            print(f"Intraday backfill: {backfilled} done, {skipped_already_covered} already covered, {skipped_no_cache} no cache")
 
     async def backfill_daily_data(
         self,
         symbols: list,
         target_start_date: date,
         batch_size: int = 50,
+        quiet: bool = False,
     ) -> None:
         """
         Backfill historical daily data by fetching data BEFORE existing cache.
@@ -583,67 +508,48 @@ class DataCache:
             symbols: List of ticker symbols to backfill
             target_start_date: Target start date for historical data
             batch_size: Number of symbols to fetch per batch (default: 50)
+            quiet: Suppress verbose output, show only progress bars and errors
         """
         backfilled = 0
         skipped_no_cache = 0
         skipped_already_covered = 0
         failed = 0
 
-        self.logger.info("=" * 80)
-        self.logger.info(f"BACKFILL DAILY: Fetching historical daily data back to {target_start_date}")
-        self.logger.info("=" * 80)
-
         # Phase 1: Analyze existing caches
-        self.logger.info("  Phase 1: Analyzing existing caches...")
-
         needs_backfill: list = []
-        backfill_info: Dict[str, Tuple[pd.DataFrame, date, int]] = {}  # symbol -> (cached_df, min_date, days_to_fetch)
+        backfill_info: Dict[str, Tuple[pd.DataFrame, date, int]] = {}
 
         for symbol in symbols:
             cached_df = load_daily_data(symbol, self.daily_dir)
 
             if cached_df is None:
                 skipped_no_cache += 1
-                self.logger.debug(f"  {symbol}: No cache found, skipping")
                 continue
 
-            # Normalize timezone for comparison
             cached_df = normalize_dataframe_timezone(cached_df)
             cached_min_date = cached_df.index.min()
             cached_min_date_only = cached_min_date.date() if hasattr(cached_min_date, "date") else cached_min_date
 
             if cached_min_date_only <= target_start_date:
                 skipped_already_covered += 1
-                self.logger.debug(f"  {symbol}: Already has data from {cached_min_date_only}, skipping")
                 continue
 
-            # Calculate days to fetch (from target_start_date to cached_min_date)
-            days_to_fetch = (cached_min_date_only - target_start_date).days + 10  # +10 buffer for overlap
+            days_to_fetch = (cached_min_date_only - target_start_date).days + 10
             needs_backfill.append(symbol)
             backfill_info[symbol] = (cached_df, cached_min_date_only, days_to_fetch)
-            self.logger.debug(f"  {symbol}: Needs backfill from {target_start_date} to {cached_min_date_only} ({days_to_fetch} days)")
-
-        self.logger.info(
-            f"  Phase 1 complete: {len(needs_backfill)} need backfill, "
-            f"{skipped_no_cache} no cache, {skipped_already_covered} already covered"
-        )
 
         if not needs_backfill:
-            self.logger.info("  Nothing to backfill!")
+            if not quiet:
+                print("Daily backfill: nothing to do")
             return
 
         # Phase 2: Fetch historical data in batches and merge
-        self.logger.info(f"  Phase 2: Backfilling {len(needs_backfill)} symbols...")
-
-        # Calculate duration - IB requires > 365 days to be in years format
         max_days = max(info[2] for info in backfill_info.values())
         if max_days > 365:
-            years = (max_days // 365) + 1  # Round up to ensure coverage
+            years = (max_days // 365) + 1
             duration = f"{years} Y"
         else:
             duration = f"{max_days} D"
-
-        self.logger.info(f"  Fetching with duration: {duration} (covering {max_days} days)")
 
         def save_backfill_batch(batch_data: Dict[str, pd.DataFrame]) -> None:
             nonlocal backfilled, failed
@@ -655,33 +561,27 @@ class DataCache:
 
                 if df is None or df.empty:
                     failed += 1
-                    self.logger.warning(f"  {symbol}: Failed to fetch historical data")
+                    if not quiet:
+                        self.logger.warning(f"{symbol}: Failed to fetch historical data")
                     continue
 
-                # Normalize and merge
                 normalized_df = normalize_dataframe_timezone(df)
-
-                # Keep only rows from fetched data that are BEFORE cached min date (avoid duplicates)
                 cached_min_ts = cached_df.index.min()
                 new_rows = normalized_df[normalized_df.index < cached_min_ts]
 
                 if new_rows.empty:
-                    self.logger.warning(f"  {symbol}: No new historical data found")
-                    failed += 1
+                    # Not an error - data is already complete, just skip silently
+                    self.logger.debug(f"{symbol}: No new historical data found (already backfilled)")
+                    backfilled += 1  # Count as success - data already exists
                     continue
 
-                # Merge: prepend new rows to existing data
                 merged_df = pd.concat([new_rows, cached_df])
                 merged_df = merged_df.sort_index()
                 merged_df = merged_df[~merged_df.index.duplicated(keep="last")]
 
-                # Save merged data
                 save_daily_data(symbol, merged_df, self.daily_dir)
                 self.daily_data_cache[symbol] = merged_df
                 backfilled += 1
-
-                new_min_date = merged_df.index.min().date()
-                self.logger.info(f"  {symbol}: Backfilled! New date range: {new_min_date} to {merged_df.index.max().date()}")
 
         await self.ib_fetcher.fetch_multiple_stocks(
             symbols=needs_backfill,
@@ -690,16 +590,13 @@ class DataCache:
             use_rth=True,
             batch_size=batch_size,
             on_batch_complete=save_backfill_batch,
+            show_progress=not quiet,
         )
 
         failed = len(needs_backfill) - backfilled
 
         # Summary
-        self.logger.info("")
-        self.logger.info("=" * 80)
-        self.logger.info("Daily Backfill Summary:")
-        self.logger.info(f"   - Backfilled: {backfilled}")
-        self.logger.info(f"   - Skipped (no cache): {skipped_no_cache}")
-        self.logger.info(f"   - Skipped (already covered): {skipped_already_covered}")
-        self.logger.info(f"   - Failed: {failed}")
-        self.logger.info("=" * 80)
+        if failed > 0 and not quiet:
+            self.logger.warning(f"Daily backfill: {failed} symbols failed")
+        if not quiet:
+            print(f"Daily backfill: {backfilled} done, {skipped_already_covered} already covered, {skipped_no_cache} no cache")

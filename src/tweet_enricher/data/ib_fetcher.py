@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 from ib_async import IB, Stock, util
+from tqdm import tqdm
 
 from tweet_enricher.config import (
     DEFAULT_BATCH_DELAY,
@@ -84,6 +85,7 @@ class IBHistoricalDataFetcher:
         exchange: str = "SMART",
         currency: str = "USD",
         batch_size: int = 50,
+        show_progress: bool = True,
     ) -> tuple[List[str], List[str]]:
         """
         Validate which symbols have valid IB contracts.
@@ -93,6 +95,7 @@ class IBHistoricalDataFetcher:
             exchange: Exchange (default: SMART)
             currency: Currency (default: USD)
             batch_size: Number of contracts to validate per batch
+            show_progress: Show tqdm progress bar (default: True)
 
         Returns:
             Tuple of (valid_symbols, invalid_symbols)
@@ -104,7 +107,13 @@ class IBHistoricalDataFetcher:
         if total == 0:
             return valid_symbols, invalid_symbols
 
-        self.logger.info(f"Validating {total} contracts...")
+        pbar = tqdm(
+            total=total,
+            desc="Validating contracts",
+            disable=not show_progress,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
 
         # Process in batches
         for batch_start in range(0, total, batch_size):
@@ -116,7 +125,7 @@ class IBHistoricalDataFetcher:
 
             # Qualify all contracts in batch
             try:
-                qualified = await self.ib.qualifyContractsAsync(*contracts)
+                await self.ib.qualifyContractsAsync(*contracts)
 
                 # Check which contracts were successfully qualified
                 for symbol, contract in zip(batch_symbols, contracts):
@@ -124,18 +133,23 @@ class IBHistoricalDataFetcher:
                         valid_symbols.append(symbol)
                     else:
                         invalid_symbols.append(symbol)
-                        self.logger.debug(f"Invalid contract: {symbol}")
 
             except Exception as e:
-                self.logger.warning(f"Error validating batch: {e}")
+                self.logger.error(f"Error validating batch: {e}")
                 # Mark entire batch as invalid on error
                 invalid_symbols.extend(batch_symbols)
+
+            pbar.update(len(batch_symbols))
 
             # Small delay between batches
             if batch_end < total:
                 await asyncio.sleep(0.5)
 
-        self.logger.info(f"Validation complete: {len(valid_symbols)} valid, {len(invalid_symbols)} invalid")
+        pbar.close()
+
+        if invalid_symbols:
+            self.logger.warning(f"Validation: {len(invalid_symbols)} invalid contracts")
+
         return valid_symbols, invalid_symbols
 
     async def fetch_historical_data(
@@ -222,6 +236,7 @@ class IBHistoricalDataFetcher:
         batch_size: int = DEFAULT_BATCH_SIZE,
         delay_between_batches: float = DEFAULT_BATCH_DELAY,
         on_batch_complete: Optional[Callable[[Dict[str, pd.DataFrame]], None]] = None,
+        show_progress: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """
         Fetch historical data for multiple stocks with batching.
@@ -236,6 +251,7 @@ class IBHistoricalDataFetcher:
             batch_size: Number of symbols per batch (default: 50)
             delay_between_batches: Delay in seconds between batches (default: 2.0)
             on_batch_complete: Optional callback called after each batch with results
+            show_progress: Show tqdm progress bar (default: True)
 
         Returns:
             Dictionary mapping symbols to their DataFrames
@@ -247,13 +263,19 @@ class IBHistoricalDataFetcher:
             return results
 
         total_batches = (total + batch_size - 1) // batch_size
+        total_failed = 0
+
+        pbar = tqdm(
+            total=total,
+            desc="Fetching daily",
+            disable=not show_progress,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
 
         for batch_start in range(0, total, batch_size):
             batch_end = min(batch_start + batch_size, total)
             batch_symbols = symbols[batch_start:batch_end]
-            batch_num = (batch_start // batch_size) + 1
-
-            self.logger.info(f"Batch {batch_num}/{total_batches}: Fetching {len(batch_symbols)} symbols...")
 
             # Create and execute tasks in parallel
             tasks = [
@@ -271,22 +293,15 @@ class IBHistoricalDataFetcher:
 
             # Process results
             batch_data: Dict[str, pd.DataFrame] = {}
-            successful = 0
-            failed = 0
 
             for symbol, df in zip(batch_symbols, batch_results):
                 if df is not None and not df.empty:
                     results[symbol] = df
                     batch_data[symbol] = df
-                    successful += 1
                 else:
-                    failed += 1
+                    total_failed += 1
 
-            # Log batch status
-            if failed > 0:
-                self.logger.warning(f"Batch {batch_num}/{total_batches}: {successful} success, {failed} failed")
-            else:
-                self.logger.info(f"Batch {batch_num}/{total_batches}: {successful} success")
+            pbar.update(len(batch_symbols))
 
             # Call callback for immediate processing (e.g., save to disk)
             if on_batch_complete and batch_data:
@@ -296,7 +311,11 @@ class IBHistoricalDataFetcher:
             if batch_end < total:
                 await asyncio.sleep(delay_between_batches)
 
-        self.logger.info(f"Total: {len(results)}/{total} symbols fetched successfully")
+        pbar.close()
+
+        if total_failed > 0:
+            self.logger.warning(f"Daily fetch: {total_failed}/{total} symbols failed")
+
         return results
 
     async def fetch_multiple_stocks_intraday(
@@ -309,6 +328,7 @@ class IBHistoricalDataFetcher:
         use_rth: bool = False,
         delay_between_symbols: float = INTRADAY_FETCH_DELAY,
         on_symbol_complete: Optional[Callable[[str, pd.DataFrame], None]] = None,
+        show_progress: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """
         Fetch intraday historical data for multiple stocks sequentially.
@@ -325,6 +345,7 @@ class IBHistoricalDataFetcher:
             use_rth: Use regular trading hours only (default: False for extended hours)
             delay_between_symbols: Seconds between symbol requests (default: 2.0)
             on_symbol_complete: Callback called after each symbol with (symbol, df)
+            show_progress: Show tqdm progress bar (default: True)
 
         Returns:
             Dictionary mapping symbols to their DataFrames
@@ -335,11 +356,19 @@ class IBHistoricalDataFetcher:
         if total == 0:
             return results
 
-        successful = 0
         failed = 0
 
-        for i, symbol in enumerate(symbols):
-            self.logger.info(f"Symbol {i + 1}/{total}: {symbol}")
+        pbar = tqdm(
+            enumerate(symbols),
+            total=total,
+            desc="Fetching intraday",
+            disable=not show_progress,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
+
+        for i, symbol in pbar:
+            pbar.set_postfix_str(symbol, refresh=False)
 
             df = await self.fetch_historical_data(
                 symbol=symbol,
@@ -352,7 +381,6 @@ class IBHistoricalDataFetcher:
 
             if df is not None and not df.empty:
                 results[symbol] = df
-                successful += 1
                 if on_symbol_complete:
                     on_symbol_complete(symbol, df)
             else:
@@ -362,5 +390,7 @@ class IBHistoricalDataFetcher:
             if i < total - 1:
                 await asyncio.sleep(delay_between_symbols)
 
-        self.logger.info(f"Total: {successful}/{total} symbols fetched successfully, {failed} failed")
+        if failed > 0:
+            self.logger.warning(f"Intraday fetch: {failed}/{total} symbols failed")
+
         return results

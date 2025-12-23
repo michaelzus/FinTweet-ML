@@ -239,11 +239,11 @@ async def _ohlcv_sync(args: argparse.Namespace) -> int:
     trading_days = duration_to_trading_days(duration)
     target_start_date = (now - timedelta(days=calendar_days)).date()
 
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info(f"OHLCV SYNC: {len(symbols)} symbols, duration={duration}")
-    logger.info(f"Target date range: {target_start_date} to {now.date()} ({calendar_days} calendar days)")
-    logger.info("=" * 80)
+    # Check quiet mode
+    quiet = getattr(args, "quiet", False)
+
+    if not quiet:
+        print(f"OHLCV sync: {len(symbols)} symbols, {target_start_date} to {now.date()}")
 
     # Initialize IB fetcher and DataCache
     fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
@@ -259,66 +259,46 @@ async def _ohlcv_sync(args: argparse.Namespace) -> int:
 
     try:
         # Step 1: Fetch daily data (smart caching with incremental updates)
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info(f"STEP 1: Syncing DAILY data ({duration})...")
-        logger.info("=" * 80)
-
         await cache.prefetch_all_daily_data(
             symbols=symbols,
             max_date=now,
             duration=duration,
             batch_size=args.batch_size,
+            quiet=quiet,
         )
 
         # Step 1b: Backfill daily to target start date (if needed)
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info(f"STEP 1b: Backfilling DAILY data to {target_start_date}...")
-        logger.info("=" * 80)
-
         await cache.backfill_daily_data(
             symbols=symbols,
             target_start_date=target_start_date,
             batch_size=args.batch_size,
+            quiet=quiet,
         )
 
         # Step 2: Fetch intraday data (unless --daily-only)
         if not args.daily_only:
-            # Step 2a: Initial intraday fetch (up to 200 days with smart caching)
-            logger.info("")
-            logger.info("=" * 80)
-            logger.info("STEP 2: Syncing INTRADAY data (initial fetch)...")
-            logger.info("=" * 80)
-
             await cache.prefetch_all_intraday_data(
                 symbols=symbols,
                 max_date=now,
                 total_days=min(trading_days, 200),  # IB limit per request
                 delay_between_symbols=INTRADAY_FETCH_DELAY,
+                quiet=quiet,
             )
 
             # Step 2b: Backfill intraday to match daily duration (if needed)
             if trading_days > 200:
-                logger.info("")
-                logger.info("=" * 80)
-                logger.info(f"STEP 3: Backfilling INTRADAY data to {target_start_date}...")
-                logger.info("=" * 80)
-
                 await cache.backfill_intraday_data(
                     symbols=symbols,
                     target_start_date=target_start_date,
                     delay_between_symbols=INTRADAY_FETCH_DELAY,
+                    quiet=quiet,
                 )
 
         # Final Summary
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("SYNC COMPLETE")
-        logger.info("=" * 80)
-        logger.info(f"Daily data:    {args.output_dir}/")
-        if not args.daily_only:
-            logger.info(f"Intraday data: {args.intraday_dir}/")
+        if not quiet:
+            print(f"\nSync complete: {args.output_dir}/")
+            if not args.daily_only:
+                print(f"Intraday: {args.intraday_dir}/")
 
     finally:
         await fetcher.disconnect()
@@ -396,13 +376,11 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
     earliest_start = min(r[0] for r in ticker_ranges.values())
     latest_end = max(r[1] for r in ticker_ranges.values())
 
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info(f"TWEET-DB OHLCV SYNC: {len(ticker_ranges)} tickers")
-    logger.info(f"Overall date range: {earliest_start} to {latest_end}")
-    if since_date:
-        logger.info(f"--since filter: {since_date}")
-    logger.info("=" * 80)
+    # Check quiet mode
+    quiet = getattr(args, "quiet", False)
+
+    if not quiet:
+        print(f"Tweet-DB sync: {len(ticker_ranges)} tickers, {earliest_start} to {latest_end}")
 
     # Step 3: Connect to IB and validate contracts
     fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
@@ -418,18 +396,11 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
 
     try:
         # Validate all contracts
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("STEP 1: Validating contracts with IB...")
-        logger.info("=" * 80)
-
         all_symbols = list(ticker_ranges.keys())
-        valid_symbols, invalid_symbols = await fetcher.validate_contracts(all_symbols)
+        valid_symbols, invalid_symbols = await fetcher.validate_contracts(all_symbols, show_progress=not quiet)
 
-        if invalid_symbols:
-            logger.info(f"Invalid contracts ({len(invalid_symbols)}): {', '.join(sorted(invalid_symbols)[:20])}")
-            if len(invalid_symbols) > 20:
-                logger.info(f"  ... and {len(invalid_symbols) - 20} more")
+        if invalid_symbols and not quiet:
+            print(f"Invalid contracts: {len(invalid_symbols)}")
 
         # Filter to valid symbols only
         ticker_ranges = {t: r for t, r in ticker_ranges.items() if t in valid_symbols}
@@ -438,15 +409,13 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
             logger.error("No valid contracts found!")
             return 1
 
-        logger.info(f"Proceeding with {len(ticker_ranges)} valid tickers")
+        if not quiet:
+            print(f"Valid contracts: {len(ticker_ranges)}")
 
         # Step 4: Fetch each ticker one-by-one with its specific date range
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("STEP 2: Fetching OHLCV data (one ticker at a time)...")
-        logger.info("=" * 80)
-
         # Import feather loaders to check cache coverage
+        from tqdm import tqdm
+
         from tweet_enricher.io.feather import load_daily_data, load_intraday_data
 
         total_tickers = len(ticker_ranges)
@@ -456,7 +425,18 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
         skipped_intraday = 0
         failed = 0
 
-        for idx, (ticker, (start_date, end_date)) in enumerate(ticker_ranges.items(), 1):
+        pbar = tqdm(
+            enumerate(ticker_ranges.items(), 1),
+            total=total_tickers,
+            desc="Fetching OHLCV",
+            disable=quiet,
+            ncols=80,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
+
+        for idx, (ticker, (start_date, end_date)) in pbar:
+            pbar.set_postfix_str(ticker, refresh=False)
+
             # Calculate duration for this ticker
             days_to_fetch = (end_date - start_date).days
             if days_to_fetch > 365:
@@ -488,13 +468,10 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
 
             # Skip if both caches are complete
             if not daily_needs_fetch and (args.daily_only or not intraday_needs_fetch):
-                logger.debug(f"[{idx}/{total_tickers}] {ticker}: Cache complete, skipping")
                 skipped_daily += 1
                 if not args.daily_only:
                     skipped_intraday += 1
                 continue
-
-            logger.info(f"[{idx}/{total_tickers}] {ticker}: {start_date} to {end_date} ({duration})")
 
             try:
                 # Fetch daily data only if needed
@@ -504,13 +481,14 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
                         max_date=datetime.combine(end_date, datetime.min.time()).replace(tzinfo=ET),
                         duration=duration,
                         batch_size=1,
+                        quiet=True,  # Suppress nested progress bars
                     )
 
-                    # Backfill daily if needed
                     await cache.backfill_daily_data(
                         symbols=[ticker],
                         target_start_date=start_date,
                         batch_size=1,
+                        quiet=True,
                     )
                     fetched_daily += 1
                 else:
@@ -524,21 +502,22 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
                             max_date=datetime.combine(end_date, datetime.min.time()).replace(tzinfo=ET),
                             total_days=min(trading_days, 200),
                             delay_between_symbols=0.5,
+                            quiet=True,
                         )
 
-                        # Backfill intraday if needed
                         if trading_days > 200:
                             await cache.backfill_intraday_data(
                                 symbols=[ticker],
                                 target_start_date=start_date,
                                 delay_between_symbols=0.5,
+                                quiet=True,
                             )
                         fetched_intraday += 1
                     else:
                         skipped_intraday += 1
 
             except Exception as e:
-                logger.warning(f"  Failed: {e}")
+                logger.error(f"{ticker}: {e}")
                 failed += 1
 
             # Small delay between tickers (only if we fetched something)
@@ -546,20 +525,13 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
                 await asyncio.sleep(0.5)
 
         # Final Summary
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("TWEET-DB SYNC COMPLETE")
-        logger.info("=" * 80)
-        logger.info(f"Total tickers from DB: {original_count}")
-        logger.info(f"Excluded (config):     {excluded_count}")
-        logger.info(f"Invalid contracts:     {len(invalid_symbols)}")
-        logger.info(f"Skipped (cached):      {skipped_daily} daily, {skipped_intraday} intraday")
-        logger.info(f"Fetched:               {fetched_daily} daily, {fetched_intraday} intraday")
-        logger.info(f"Failed:                {failed}")
-        logger.info(f"Date range:            {earliest_start} to {latest_end}")
-        logger.info(f"Daily data:            {args.output_dir}/")
-        if not args.daily_only:
-            logger.info(f"Intraday data:         {args.intraday_dir}/")
+        if failed > 0:
+            logger.error(f"Sync failed: {failed} tickers")
+        if not quiet:
+            print(f"\nSync complete: {fetched_daily} daily, {fetched_intraday} intraday fetched")
+            print(f"Skipped (cached): {skipped_daily} daily, {skipped_intraday} intraday")
+            if failed > 0:
+                print(f"Failed: {failed}")
 
     finally:
         await fetcher.disconnect()
@@ -818,14 +790,15 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     from tweet_enricher.core.dataset_builder import DatasetBuilder
     from tweet_enricher.data.cache_reader import CacheReader
 
+    # Check quiet mode
+    quiet = getattr(args, "quiet", False)
+
     # Load tweets from DB or CSV
     tweets_path = Path(args.tweets)
 
     if not tweets_path.exists():
         logger.error(f"Tweets file not found: {tweets_path}")
         return 1
-
-    logger.info(f"Loading tweets from {tweets_path}")
 
     if tweets_path.suffix == ".db":
         # Load from SQLite database
@@ -850,11 +823,13 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             }
             for t in tweets
         ])
-        logger.info(f"Loaded {len(tweets_df)} tweets from database")
+        if not quiet:
+            print(f"Loaded {len(tweets_df)} tweets from database")
     else:
         # Load from CSV
         tweets_df = pd.read_csv(tweets_path)
-        logger.info(f"Loaded {len(tweets_df)} tweets from CSV")
+        if not quiet:
+            print(f"Loaded {len(tweets_df)} tweets from CSV")
 
         # Apply date filters if provided
         if args.since or args.until:
@@ -865,7 +840,6 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             if args.until:
                 until_date = pd.to_datetime(args.until)
                 tweets_df = tweets_df[tweets_df["timestamp"] <= until_date]
-            logger.info(f"After date filter: {len(tweets_df)} tweets")
 
     if tweets_df.empty:
         logger.error("No tweets found matching criteria")
@@ -874,7 +848,6 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     # Filter out excluded tickers
     excluded_count = len(tweets_df[tweets_df["ticker"].isin(EXCLUDED_TICKERS)])
     if excluded_count > 0:
-        logger.info(f"Excluding {excluded_count} tweets with problematic tickers")
         tweets_df = tweets_df[~tweets_df["ticker"].isin(EXCLUDED_TICKERS)]
 
     # Initialize components (no IB connection needed!)
@@ -887,30 +860,16 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     builder = DatasetBuilder(cache, indicators, metadata_cache)
 
     # Validate data coverage
-    logger.info("Validating data coverage...")
     report = builder.validate_coverage(tweets_df, require_intraday=True)
 
     if report.missing_tickers:
-        logger.warning(f"Missing OHLCV data for {len(report.missing_tickers)} tickers:")
-        for ticker in report.missing_tickers[:10]:
-            logger.warning(f"  - {ticker}")
-        if len(report.missing_tickers) > 10:
-            logger.warning(f"  ... and {len(report.missing_tickers) - 10} more")
-        logger.warning("")
-        logger.warning("To fetch missing data, run:")
-        logger.warning(f"  fintweet-ml ohlcv sync --tickers {' '.join(report.missing_tickers[:5])}")
-
-    if report.partial_coverage:
-        logger.warning(f"{len(report.partial_coverage)} tickers have partial coverage (missing intraday)")
-
-    logger.info(f"Data available for {report.available_tickers}/{report.total_tickers} tickers")
+        logger.warning(f"Missing OHLCV data for {len(report.missing_tickers)} tickers")
+        if not quiet:
+            print("To fetch missing data, run:")
+            print(f"  fintweet-ml ohlcv sync --tickers {' '.join(report.missing_tickers[:5])}")
 
     # Build dataset
-    logger.info("=" * 80)
-    logger.info("Building dataset...")
-    logger.info("=" * 80)
-
-    output_df = builder.build(tweets_df, skip_missing=True, verbose=True)
+    output_df = builder.build(tweets_df, skip_missing=True, verbose=not quiet, show_progress=not quiet)
 
     # Save results
     output_path = Path(args.output)
@@ -918,20 +877,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     output_df.to_csv(output_path, index=False)
 
     # Summary
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info("SUMMARY")
-    logger.info("=" * 80)
-    logger.info(f"Total samples: {len(output_df)}")
-
-    # Label distribution
-    label_counts = Counter(output_df["label_1d_3class"].tolist())
-    logger.info("\nLabel distribution:")
-    for label, count in sorted(label_counts.items()):
-        pct = 100 * count / len(output_df) if len(output_df) > 0 else 0
-        logger.info(f"  {label}: {count} ({pct:.1f}%)")
-
-    logger.info(f"\nDataset saved to: {output_path}")
+    if not quiet:
+        print(f"\nTotal samples: {len(output_df)}")
+        label_counts = Counter(output_df["label_1d_3class"].tolist())
+        print("Label distribution:")
+        for label, count in sorted(label_counts.items()):
+            pct = 100 * count / len(output_df) if len(output_df) > 0 else 0
+            print(f"  {label}: {count} ({pct:.1f}%)")
+        print(f"\nDataset saved to: {output_path}")
 
     return 0
 
@@ -1267,6 +1220,7 @@ Examples:
     ohlcv_sync_parser.add_argument("--client-id", type=int, default=1, help="Client ID (default: 1)")
     ohlcv_sync_parser.add_argument("--exchange", default="SMART", help="Exchange (default: SMART)")
     ohlcv_sync_parser.add_argument("--currency", default="USD", help="Currency (default: USD)")
+    ohlcv_sync_parser.add_argument("-q", "--quiet", action="store_true", help="Suppress verbose output, show only progress bars")
     ohlcv_sync_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     ohlcv_sync_parser.set_defaults(func=cmd_ohlcv_sync)
 
@@ -1362,6 +1316,7 @@ Examples:
     prepare_parser.add_argument(
         "--intraday-dir", default=str(INTRADAY_CACHE_DIR), help=f"Intraday cache directory (default: {INTRADAY_CACHE_DIR})"
     )
+    prepare_parser.add_argument("-q", "--quiet", action="store_true", help="Suppress verbose output, show only progress bars")
     prepare_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     prepare_parser.set_defaults(func=cmd_prepare)
 
