@@ -6,7 +6,6 @@ Provides subcommands for all pipeline operations:
 - prepare: Dataset preparation (offline, no API calls)
 - train: Model training
 - evaluate: Model evaluation
-- convert: Discord export conversion
 """
 
 import argparse
@@ -36,11 +35,7 @@ from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache import DataCache
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
 from tweet_enricher.data.stock_metadata import StockMetadataCache
-from tweet_enricher.data.tickers import (
-    fetch_russell1000_tickers,
-    fetch_sp500_tickers,
-    filter_tickers_by_volume,
-)
+from tweet_enricher.data.tickers import filter_tickers_by_volume
 from tweet_enricher.twitter.database import TweetDatabase
 from tweet_enricher.twitter.sync import SyncService
 
@@ -136,148 +131,20 @@ def duration_to_trading_days(duration: str) -> int:
 # ============================================================================
 async def _ohlcv_sync(args: argparse.Namespace) -> int:
     """
-    Sync OHLCV data using smart caching with incremental updates and backfill.
-
-    This command:
-    1. Fetches daily data for the full requested duration
-    2. Fetches intraday data with smart caching (checks existing cache first)
-    3. Automatically backfills intraday data to match daily duration
-
-    With --tweet-db: Fetches data for all tickers in the tweet database,
-    starting 1 month before each ticker's first tweet appearance.
-    """
-    logger = logging.getLogger(__name__)
-    now = datetime.now(ET)
-
-    # Check if using tweet-db mode
-    if hasattr(args, "tweet_db") and args.tweet_db:
-        return await _ohlcv_sync_from_tweet_db(args, logger, now)
-
-    # Determine which symbols to fetch (standard mode)
-    if args.all:
-        logger.info("Fetching combined S&P 500 and Russell 1000 ticker lists...")
-        try:
-            sp500_symbols = fetch_sp500_tickers()
-            logger.info(f"Found {len(sp500_symbols)} S&P 500 tickers")
-
-            russell1000_symbols = fetch_russell1000_tickers()
-            logger.info(f"Found {len(russell1000_symbols)} Russell 1000 tickers")
-
-            symbols = list(set(sp500_symbols + russell1000_symbols + ["SPY"]))
-            logger.info(f"Combined total: {len(symbols)} unique tickers (including SPY)")
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            return 1
-    elif args.sp500:
-        logger.info("Fetching S&P 500 ticker list...")
-        try:
-            symbols = fetch_sp500_tickers()
-            if "SPY" not in symbols:
-                symbols.append("SPY")
-            logger.info(f"Found {len(symbols)} S&P 500 tickers (including SPY)")
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            return 1
-    elif args.russell1000:
-        logger.info("Fetching Russell 1000 ticker list...")
-        try:
-            symbols = fetch_russell1000_tickers()
-            logger.info(f"Found {len(symbols)} Russell 1000 tickers")
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            return 1
-    else:
-        symbols = args.tickers
-
-    if not symbols:
-        logger.error("No symbols specified. Use --tickers, --sp500, --russell1000, --all, or --tweet-db")
-        return 1
-
-    # Calculate target start date from duration (use calendar days for date range)
-    duration = normalize_duration(args.duration)
-    calendar_days = duration_to_calendar_days(duration)
-    trading_days = duration_to_trading_days(duration)
-    target_start_date = (now - timedelta(days=calendar_days)).date()
-
-    # Check quiet mode
-    quiet = getattr(args, "quiet", False)
-
-    if not quiet:
-        print(f"OHLCV sync: {len(symbols)} symbols, {target_start_date} to {now.date()}")
-
-    # Initialize IB fetcher and DataCache
-    fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
-    cache = DataCache(
-        ib_fetcher=fetcher,
-        daily_dir=Path(args.output_dir),
-        intraday_dir=Path(args.intraday_dir),
-    )
-
-    connected = await fetcher.connect()
-    if not connected:
-        return 1
-
-    try:
-        # Step 1: Fetch daily data (smart caching with incremental updates)
-        await cache.prefetch_all_daily_data(
-            symbols=symbols,
-            max_date=now,
-            duration=duration,
-            batch_size=args.batch_size,
-            quiet=quiet,
-        )
-
-        # Step 1b: Backfill daily to target start date (if needed)
-        await cache.backfill_daily_data(
-            symbols=symbols,
-            target_start_date=target_start_date,
-            batch_size=args.batch_size,
-            quiet=quiet,
-        )
-
-        # Step 2: Fetch intraday data (unless --daily-only)
-        if not args.daily_only:
-            await cache.prefetch_all_intraday_data(
-                symbols=symbols,
-                max_date=now,
-                total_days=min(trading_days, 200),  # IB limit per request
-                delay_between_symbols=INTRADAY_FETCH_DELAY,
-                quiet=quiet,
-            )
-
-            # Step 2b: Backfill intraday to match daily duration (if needed)
-            if trading_days > 200:
-                await cache.backfill_intraday_data(
-                    symbols=symbols,
-                    target_start_date=target_start_date,
-                    delay_between_symbols=INTRADAY_FETCH_DELAY,
-                    quiet=quiet,
-                )
-
-        # Final Summary
-        if not quiet:
-            print(f"\nSync complete: {args.output_dir}/")
-            if not args.daily_only:
-                print(f"Intraday: {args.intraday_dir}/")
-
-    finally:
-        await fetcher.disconnect()
-
-    return 0
-
-
-async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Logger, now: datetime) -> int:
-    """
-    Sync OHLCV data for all tickers in the tweet database.
+    Sync OHLCV data for all tickers in the tweet database plus SPY.
 
     Flow:
     1. Load unique tickers with date ranges from tweet DB
     2. Filter EXCLUDED_TICKERS
-    3. Validate contracts via IB API (filter invalid symbols)
-    4. Fetch each valid ticker one-by-one with its specific date range
+    3. Add SPY for the entire date range
+    4. Validate contracts via IB API (filter invalid symbols)
+    5. Fetch each valid ticker one-by-one with its specific date range
     """
     from datetime import date as date_cls
     from dateutil.relativedelta import relativedelta
+
+    logger = logging.getLogger(__name__)
+    now = datetime.now(ET)
 
     db_path = Path(args.tweet_db)
     if not db_path.exists():
@@ -336,11 +203,16 @@ async def _ohlcv_sync_from_tweet_db(args: argparse.Namespace, logger: logging.Lo
     earliest_start = min(r[0] for r in ticker_ranges.values())
     latest_end = max(r[1] for r in ticker_ranges.values())
 
+    # Always add SPY for the entire date range (needed for market adjustment)
+    if "SPY" not in ticker_ranges:
+        ticker_ranges["SPY"] = (earliest_start, latest_end)
+        logger.info("Added SPY for full date range (market adjustment)")
+
     # Check quiet mode
     quiet = getattr(args, "quiet", False)
 
     if not quiet:
-        print(f"Tweet-DB sync: {len(ticker_ranges)} tickers, {earliest_start} to {latest_end}")
+        print(f"Tweet-DB sync: {len(ticker_ranges)} tickers (including SPY), {earliest_start} to {latest_end}")
 
     # Step 3: Connect to IB and validate contracts
     fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
@@ -1113,8 +985,8 @@ Commands:
   evaluate   Model evaluation (Flow 4)
 
 Examples:
-  # Collect OHLCV data
-  fintweet-ml ohlcv sync --sp500
+  # Collect OHLCV data for tickers in tweet database
+  fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
 
   # Collect tweets
   fintweet-ml twitter sync --months 6
@@ -1143,42 +1015,32 @@ Examples:
     # ohlcv sync
     ohlcv_sync_parser = ohlcv_subparsers.add_parser(
         "sync",
-        help="Sync OHLCV data from Interactive Brokers (daily + intraday)",
+        help="Sync OHLCV data from Interactive Brokers for tickers in tweet database",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  fintweet-ml ohlcv sync --tickers AAPL MSFT GOOGL   # Fetches daily + intraday
-  fintweet-ml ohlcv sync --sp500                     # All S&P 500 stocks
-  fintweet-ml ohlcv sync --tickers NVDA --daily-only # Daily only, skip intraday
-  fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db  # All tickers from tweet DB
+  fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
+  fintweet-ml ohlcv sync --tweet-db tweets.db --since 2024-01-01
+  fintweet-ml ohlcv sync --tweet-db tweets.db --daily-only
         """,
     )
-    ohlcv_sync_parser.add_argument("--tickers", nargs="+", help="List of stock symbols")
-    ohlcv_sync_parser.add_argument("--sp500", action="store_true", help="Fetch data for all S&P 500 stocks")
-    ohlcv_sync_parser.add_argument("--russell1000", action="store_true", help="Fetch data for all Russell 1000 stocks")
-    ohlcv_sync_parser.add_argument("--all", action="store_true", help="Fetch data for both S&P 500 and Russell 1000")
     ohlcv_sync_parser.add_argument(
         "--tweet-db",
-        help="Path to tweet database - fetches data for all tickers starting 1 month before first appearance",
+        required=True,
+        help="Path to tweet database - fetches data for all tickers (plus SPY) starting 1 month before first appearance",
     )
     ohlcv_sync_parser.add_argument(
         "--since",
-        help="Do not fetch data before this date (YYYY-MM-DD). Used with --tweet-db",
+        help="Do not fetch data before this date (YYYY-MM-DD)",
     )
     ohlcv_sync_parser.add_argument("--daily-only", action="store_true", help="Fetch only daily data (skip intraday)")
-    ohlcv_sync_parser.add_argument("--duration", default="1 Y", help="Duration for daily data (default: 1 Y)")
-    ohlcv_sync_parser.add_argument("--bar-size", default="1 day", help="Bar size for daily data (default: 1 day)")
     ohlcv_sync_parser.add_argument("--output-dir", default=str(DAILY_DATA_DIR), help=f"Daily data directory (default: {DAILY_DATA_DIR})")
     ohlcv_sync_parser.add_argument(
         "--intraday-dir", default=str(INTRADAY_CACHE_DIR), help=f"Intraday data directory (default: {INTRADAY_CACHE_DIR})"
     )
-    ohlcv_sync_parser.add_argument("--batch-size", type=int, default=200, help="Batch size for daily fetch (default: 200)")
-    ohlcv_sync_parser.add_argument("--batch-delay", type=float, default=2.0, help="Delay between batches (default: 2.0)")
     ohlcv_sync_parser.add_argument("--host", default="127.0.0.1", help="TWS/Gateway host (default: 127.0.0.1)")
     ohlcv_sync_parser.add_argument("--port", type=int, default=7497, help="TWS/Gateway port (default: 7497)")
     ohlcv_sync_parser.add_argument("--client-id", type=int, default=1, help="Client ID (default: 1)")
-    ohlcv_sync_parser.add_argument("--exchange", default="SMART", help="Exchange (default: SMART)")
-    ohlcv_sync_parser.add_argument("--currency", default="USD", help="Currency (default: USD)")
     ohlcv_sync_parser.add_argument("-q", "--quiet", action="store_true", help="Suppress verbose output, show only progress bars")
     ohlcv_sync_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     ohlcv_sync_parser.set_defaults(func=cmd_ohlcv_sync)
@@ -1362,14 +1224,6 @@ Examples:
     if args.command is None:
         parser.print_help()
         return 0
-
-    # Validate ohlcv sync arguments
-    if args.command == "ohlcv" and getattr(args, "ohlcv_command", None) == "sync":
-        has_tweet_db = getattr(args, "tweet_db", None)
-        if not args.tickers and not args.sp500 and not args.russell1000 and not args.all and not has_tweet_db:
-            ohlcv_sync_parser.error("Either --tickers, --sp500, --russell1000, --all, or --tweet-db must be provided")
-        if sum([bool(args.tickers), args.sp500, args.russell1000, args.all, bool(has_tweet_db)]) > 1:
-            ohlcv_sync_parser.error("Please provide only one of: --tickers, --sp500, --russell1000, --all, or --tweet-db")
 
     # Handle subcommand groups
     if args.command == "ohlcv":

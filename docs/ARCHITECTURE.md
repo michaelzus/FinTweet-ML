@@ -51,13 +51,10 @@ flowchart TB
 ### Flow 1: OHLCV Data Collection
 
 ```bash
-# Sync daily OHLCV data from Interactive Brokers
-fintweet-ml ohlcv sync --sp500
-fintweet-ml ohlcv sync --tickers AAPL NVDA TSLA
-fintweet-ml ohlcv sync --all --duration "1 Y"
-
-# Backfill historical intraday data
-fintweet-ml ohlcv backfill --start-date 2024-01-01 --all-cached
+# Sync OHLCV data for all tickers in tweet database (plus SPY)
+fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
+fintweet-ml ohlcv sync --tweet-db tweets.db --since 2024-01-01
+fintweet-ml ohlcv sync --tweet-db tweets.db --daily-only
 
 # Check cache status
 fintweet-ml ohlcv status --details
