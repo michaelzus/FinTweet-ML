@@ -145,6 +145,32 @@ REGIME_LOOKBACK_VOL = 5  # 5 trading days for volatility calculation
 # Stock metadata cache
 METADATA_CACHE_FILE = Path("data/stock_metadata.json")
 
+# Required columns for reliable training data
+MINIMUM_REQUIRED_COLUMNS = [
+    # Core
+    "text",
+    "label_1d_3class",
+    "tweet_hash",
+    # Numerical Features (10)
+    "volatility_7d",
+    "relative_volume",
+    "rsi_14",
+    "distance_from_ma_20",
+    "return_5d",
+    "return_20d",
+    "above_ma_20",
+    "slope_ma_20",
+    "gap_open",
+    "intraday_range",
+    # Categorical Features (6)
+    "author",
+    "category",
+    "session",
+    "market_regime",
+    "sector",
+    "market_cap_bucket",
+]
+
 # TwitterAPI.io settings
 TWITTER_API_KEY = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_DB_PATH = Path("data/tweets.db")

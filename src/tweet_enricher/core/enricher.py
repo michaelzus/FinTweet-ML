@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 
+from tweet_enricher.config import MINIMUM_REQUIRED_COLUMNS
 from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache import DataCache
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
@@ -17,32 +18,6 @@ from tweet_enricher.market.session import (
     get_market_session,
     normalize_timestamp,
 )
-
-# Required columns for reliable training data
-MINIMUM_REQUIRED_COLUMNS = [
-    # Core
-    "text",
-    "label_1d_3class",
-    "tweet_hash",
-    # Numerical Features (10)
-    "volatility_7d",
-    "relative_volume",
-    "rsi_14",
-    "distance_from_ma_20",
-    "return_5d",
-    "return_20d",
-    "above_ma_20",
-    "slope_ma_20",
-    "gap_open",
-    "intraday_range",
-    # Categorical Features (6)
-    "author",
-    "category",
-    "session",
-    "market_regime",
-    "sector",
-    "market_cap_bucket",
-]
 
 
 class TweetEnricher:
