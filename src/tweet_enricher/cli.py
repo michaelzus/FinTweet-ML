@@ -1,11 +1,11 @@
 """Unified CLI for FinTweet-ML pipeline.
 
 Provides subcommands for all pipeline operations:
-- ohlcv: OHLCV data collection from IB API
-- twitter: Tweet collection from Twitter API
-- prepare: Dataset preparation (offline, no API calls)
-- train: Model training
-- evaluate: Model evaluation
+- twitter: Tweet collection from Twitter API (Flow 1)
+- ohlcv: OHLCV data collection from IB API (Flow 2)
+- prepare: Dataset preparation (offline, no API calls) (Flow 3)
+- train: Model training (Flow 4)
+- evaluate: Model evaluation (Flow 4)
 """
 
 import argparse
@@ -122,7 +122,7 @@ def duration_to_trading_days(duration: str) -> int:
 
 
 # ============================================================================
-# FLOW 1: OHLCV Commands (IB API)
+# FLOW 2: OHLCV Commands (IB API)
 # ============================================================================
 async def _ohlcv_sync(args: argparse.Namespace) -> int:
     """
@@ -414,7 +414,7 @@ def cmd_ohlcv_status(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
-# FLOW 2: Twitter Commands
+# FLOW 1: Twitter Commands
 # ============================================================================
 def cmd_twitter_sync(args: argparse.Namespace) -> int:
     """Sync tweets from Twitter accounts."""
@@ -830,23 +830,23 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  ohlcv      OHLCV data collection from IB API (Flow 1)
-  twitter    Tweet collection from Twitter API (Flow 2)
+  twitter    Tweet collection from Twitter API (Flow 1)
+  ohlcv      OHLCV data collection from IB API (Flow 2)
   prepare    Dataset preparation - offline, no API calls (Flow 3)
   train      Model training (Flow 4)
   evaluate   Model evaluation (Flow 4)
 
 Examples:
-  # Collect OHLCV data for tickers in tweet database
-  fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
-
-  # Collect tweets
+  # Collect tweets (Flow 1)
   fintweet-ml twitter sync --months 6
 
-  # Prepare dataset (offline)
+  # Collect OHLCV data for tickers in tweet database (Flow 2)
+  fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
+
+  # Prepare dataset (offline) (Flow 3)
   fintweet-ml prepare --tweets data/tweets.db --output output/dataset.csv
 
-  # Train model
+  # Train model (Flow 4)
   fintweet-ml train --data output/dataset.csv --epochs 5
         """,
     )
@@ -859,7 +859,7 @@ Examples:
     # ============ ohlcv subcommand group ============
     ohlcv_parser = subparsers.add_parser(
         "ohlcv",
-        help="OHLCV data collection from Interactive Brokers (Flow 1)",
+        help="OHLCV data collection from Interactive Brokers (Flow 2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ohlcv_subparsers = ohlcv_parser.add_subparsers(dest="ohlcv_command", help="OHLCV commands")
@@ -914,7 +914,7 @@ Examples:
     # ============ twitter subcommand group ============
     twitter_parser = subparsers.add_parser(
         "twitter",
-        help="Twitter API operations (Flow 2)",
+        help="Twitter API operations (Flow 1)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     twitter_subparsers = twitter_parser.add_subparsers(dest="twitter_command", help="Twitter commands")
@@ -970,7 +970,7 @@ Examples:
     twitter_export_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     twitter_export_parser.set_defaults(func=cmd_twitter_export)
 
-    # ============ prepare subcommand (Flow 3 - NEW) ============
+    # ============ prepare subcommand (Flow 3) ============
     prepare_parser = subparsers.add_parser(
         "prepare",
         help="Prepare training dataset from cached data (Flow 3 - no API calls)",

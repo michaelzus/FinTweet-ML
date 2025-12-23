@@ -38,19 +38,19 @@ FinTweet-ML demonstrates a complete ML workflow for predicting stock movements f
 
 ```mermaid
 flowchart LR
-    subgraph Flow1[Flow 1: OHLCV]
+    subgraph Flow1[Flow 1: Tweets]
+        Twitter[Twitter API] --> TweetDB[(tweets.db)]
+    end
+    
+    subgraph Flow2[Flow 2: OHLCV]
         IB[IB API] --> DailyCache[(data/daily)]
         IB --> IntradayCache[(data/intraday)]
     end
     
-    subgraph Flow2[Flow 2: Tweets]
-        Twitter[Twitter API] --> TweetDB[(tweets.db)]
-    end
-    
     subgraph Flow3[Flow 3: Prepare]
-        DailyCache --> Builder[DatasetBuilder]
+        TweetDB --> Builder[DatasetBuilder]
+        DailyCache --> Builder
         IntradayCache --> Builder
-        TweetDB --> Builder
         Builder --> Dataset[dataset.csv]
     end
     
@@ -168,15 +168,14 @@ pip install -e .
 ### CLI Commands
 
 ```bash
-# Flow 1: Collect OHLCV data (requires IBKR TWS)
-fintweet-ml ohlcv sync --sp500
-fintweet-ml ohlcv backfill --start-date 2024-01-01 --all-cached
-fintweet-ml ohlcv status
-
-# Flow 2: Collect tweets
+# Flow 1: Collect tweets
 fintweet-ml twitter sync --months 6
 fintweet-ml twitter status
 fintweet-ml twitter export -o tweets.csv
+
+# Flow 2: Collect OHLCV data (requires IBKR TWS)
+fintweet-ml ohlcv sync --tweet-db data/tweets.db
+fintweet-ml ohlcv status
 
 # Flow 3: Prepare dataset (offline - no API needed!)
 fintweet-ml prepare --tweets data/tweets.db --output output/dataset.csv

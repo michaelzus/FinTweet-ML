@@ -4,22 +4,22 @@
 
 FinTweet-ML is an end-to-end ML pipeline for financial sentiment analysis, organized into 4 decoupled flows:
 
-1. **Flow 1: OHLCV Collection** - IB API data fetching (`fintweet-ml ohlcv`)
-2. **Flow 2: Tweet Collection** - Twitter API sync (`fintweet-ml twitter`)
+1. **Flow 1: Tweet Collection** - Twitter API sync (`fintweet-ml twitter`)
+2. **Flow 2: OHLCV Collection** - IB API data fetching (`fintweet-ml ohlcv`)
 3. **Flow 3: Dataset Preparation** - Offline processing (`fintweet-ml prepare`)
 4. **Flow 4: Training & Evaluation** - Model training (`fintweet-ml train/evaluate`)
 
 ```mermaid
 flowchart TB
-    subgraph Flow1[Flow 1: OHLCV Collection]
+    subgraph Flow1[Flow 1: Tweet Collection]
+        TwitterAPI[TwitterAPI.io]
+        TwitterAPI --> |Financial tweets| TweetDB[(data/tweets.db)]
+    end
+    
+    subgraph Flow2[Flow 2: OHLCV Collection]
         IB[Interactive Brokers API]
         IB --> |Daily OHLCV| DailyCache[(data/daily/*.feather)]
         IB --> |15-min bars| IntradayCache[(data/intraday/*.feather)]
-    end
-    
-    subgraph Flow2[Flow 2: Tweet Collection]
-        TwitterAPI[TwitterAPI.io]
-        TwitterAPI --> |Financial tweets| TweetDB[(data/tweets.db)]
     end
     
     subgraph Flow3[Flow 3: Dataset Preparation]
@@ -39,8 +39,8 @@ flowchart TB
         Model --> Eval[Evaluation Results]
     end
     
-    Flow1 -.-> |Read from cache| Flow3
-    Flow2 -.-> |Read from DB| Flow3
+    Flow1 -.-> |Read from DB| Flow3
+    Flow2 -.-> |Read from cache| Flow3
     Flow3 --> Flow4
 ```
 
@@ -48,19 +48,7 @@ flowchart TB
 
 ## CLI Commands
 
-### Flow 1: OHLCV Data Collection
-
-```bash
-# Sync OHLCV data for all tickers in tweet database (plus SPY)
-fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
-fintweet-ml ohlcv sync --tweet-db tweets.db --since 2024-01-01
-fintweet-ml ohlcv sync --tweet-db tweets.db --daily-only
-
-# Check cache status
-fintweet-ml ohlcv status --details
-```
-
-### Flow 2: Tweet Collection
+### Flow 1: Tweet Collection
 
 ```bash
 # Sync tweets from configured Twitter accounts
@@ -73,6 +61,18 @@ fintweet-ml twitter status
 
 # Export tweets to CSV
 fintweet-ml twitter export -o tweets.csv --since 2025-01-01
+```
+
+### Flow 2: OHLCV Data Collection
+
+```bash
+# Sync OHLCV data for all tickers in tweet database (plus SPY)
+fintweet-ml ohlcv sync --tweet-db data/twitter/tweets.db
+fintweet-ml ohlcv sync --tweet-db tweets.db --since 2024-01-01
+fintweet-ml ohlcv sync --tweet-db tweets.db --daily-only
+
+# Check cache status
+fintweet-ml ohlcv status --details
 ```
 
 ### Flow 3: Dataset Preparation (Offline)
@@ -115,13 +115,13 @@ src/
 │   │   ├── dataset_builder.py   # Offline dataset builder
 │   │   └── indicators.py        # Technical indicators (pandas-ta)
 │   ├── data/
-│   │   ├── ib_fetcher.py        # IBKR API client (Flow 1)
+│   │   ├── ib_fetcher.py        # IBKR API client (Flow 2)
 │   │   ├── cache.py             # Read/write cache (with IB)
 │   │   ├── cache_reader.py      # Read-only cache (Flow 3)
 │   │   ├── stock_metadata.py    # Stock sector/market cap
 │   │   └── tickers.py           # S&P500/Russell1000 lists
 │   ├── twitter/
-│   │   ├── client.py            # Twitter API client (Flow 2)
+│   │   ├── client.py            # Twitter API client (Flow 1)
 │   │   ├── database.py          # SQLite storage
 │   │   └── sync.py              # Incremental sync
 │   ├── io/
@@ -148,44 +148,7 @@ src/
 
 ## Flow Details
 
-### Flow 1: OHLCV Collection
-
-```mermaid
-flowchart LR
-    subgraph Input[Input]
-        Tickers[Ticker List]
-        SP500[S&P 500]
-        Russell[Russell 1000]
-    end
-    
-    subgraph Fetcher[IB Fetcher]
-        IBClient[IBHistoricalDataFetcher]
-        Batch[Batch Processing]
-    end
-    
-    subgraph Cache[Cache Layer]
-        Daily[(Daily Feather)]
-        Intraday[(Intraday Feather)]
-    end
-    
-    Tickers --> IBClient
-    SP500 --> IBClient
-    Russell --> IBClient
-    IBClient --> Batch
-    Batch --> |1 day bars| Daily
-    Batch --> |15 min bars| Intraday
-```
-
-**Purpose:** Fetch and cache historical OHLCV data from Interactive Brokers.
-
-**Components:**
-- `IBHistoricalDataFetcher` - Async IB API client
-- `DataCache` - Manages disk/memory caching with incremental updates
-- `save_daily_data/load_daily_data` - Feather file I/O
-
-**Output:** Feather files in `data/daily/` and `data/intraday/`
-
-### Flow 2: Tweet Collection
+### Flow 1: Tweet Collection
 
 ```mermaid
 flowchart LR
@@ -225,6 +188,43 @@ flowchart LR
 - `SyncService` - Incremental sync with cursor-based pagination
 
 **Output:** SQLite database at `data/tweets.db`
+
+### Flow 2: OHLCV Collection
+
+```mermaid
+flowchart LR
+    subgraph Input[Input]
+        Tickers[Ticker List]
+        SP500[S&P 500]
+        Russell[Russell 1000]
+    end
+    
+    subgraph Fetcher[IB Fetcher]
+        IBClient[IBHistoricalDataFetcher]
+        Batch[Batch Processing]
+    end
+    
+    subgraph Cache[Cache Layer]
+        Daily[(Daily Feather)]
+        Intraday[(Intraday Feather)]
+    end
+    
+    Tickers --> IBClient
+    SP500 --> IBClient
+    Russell --> IBClient
+    IBClient --> Batch
+    Batch --> |1 day bars| Daily
+    Batch --> |15 min bars| Intraday
+```
+
+**Purpose:** Fetch and cache historical OHLCV data from Interactive Brokers.
+
+**Components:**
+- `IBHistoricalDataFetcher` - Async IB API client
+- `DataCache` - Manages disk/memory caching with incremental updates
+- `save_daily_data/load_daily_data` - Feather file I/O
+
+**Output:** Feather files in `data/daily/` and `data/intraday/`
 
 ### Flow 3: Dataset Preparation
 
@@ -462,7 +462,7 @@ gantt
 
 ## Design Principles
 
-1. **Single Responsibility** - Each flow does ONE thing (OHLCV, Tweets, Prepare, Train)
+1. **Single Responsibility** - Each flow does ONE thing (Tweets, OHLCV, Prepare, Train)
 2. **Offline-Capable** - Dataset preparation works without any API connections
 3. **Reproducibility** - Same cache = same dataset every time
 4. **Dependency Injection** - Components are injected for testability
