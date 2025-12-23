@@ -17,7 +17,7 @@ flowchart TB
     end
     
     subgraph Flow2[Flow 2: OHLCV Collection]
-        IB[Interactive Brokers API]
+        TweetDB --> |Tickers to fetch| IB[Interactive Brokers API]
         IB --> |Daily OHLCV| DailyCache[(data/daily/*.feather)]
         IB --> |15-min bars| IntradayCache[(data/intraday/*.feather)]
     end
@@ -39,8 +39,9 @@ flowchart TB
         Model --> Eval[Evaluation Results]
     end
     
-    Flow1 -.-> |Read from DB| Flow3
+    Flow1 --> Flow2
     Flow2 -.-> |Read from cache| Flow3
+    Flow1 -.-> |Read from DB| Flow3
     Flow3 --> Flow4
 ```
 

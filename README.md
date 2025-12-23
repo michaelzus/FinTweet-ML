@@ -43,7 +43,8 @@ flowchart LR
     end
     
     subgraph Flow2[Flow 2: OHLCV]
-        IB[IB API] --> DailyCache[(data/daily)]
+        TweetDB --> |tickers| IB[IB API]
+        IB --> DailyCache[(data/daily)]
         IB --> IntradayCache[(data/intraday)]
     end
     
