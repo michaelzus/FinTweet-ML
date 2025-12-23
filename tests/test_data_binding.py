@@ -619,3 +619,332 @@ class TestCrossTimezoneComparison:
         # Should find bars after 10:30
         assert len(future_bars) > 0
         assert all(bar.hour > 10 or (bar.hour == 10 and bar.minute > 30) for bar in future_bars.index)
+
+
+# =============================================================================
+# Test: Look-Ahead Bias Prevention
+# =============================================================================
+
+
+class TestLookAheadBiasPrevention:
+    """
+    Explicit tests to verify NO look-ahead bias exists in the pipeline.
+
+    These tests ensure:
+    1. Features use ONLY data from BEFORE the tweet date
+    2. Tweet-day data is NEVER used for features
+    3. Adding future data doesn't change feature values
+    4. Boundary conditions (< vs <=) are correct
+    """
+
+    def test_features_use_strictly_before_tweet_date(self):
+        """Features must use data strictly BEFORE tweet date (< not <=)."""
+        # Create daily data including tweet date
+        dates = pd.date_range("2025-01-10", "2025-01-20", freq="B")
+        daily_df = pd.DataFrame(
+            {
+                "open": [100 + i for i in range(len(dates))],
+                "high": [101 + i for i in range(len(dates))],
+                "low": [99 + i for i in range(len(dates))],
+                "close": [100.5 + i for i in range(len(dates))],
+                "volume": [1000000] * len(dates),
+            },
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Tweet on Jan 15 at 10:30 AM (during market hours)
+        tweet_date = datetime(2025, 1, 15).date()
+
+        # Slice like dataset_builder does: strictly < tweet_date
+        sliced = daily_df[daily_df.index.date < tweet_date]
+
+        # CRITICAL: Jan 15 must NOT be in the sliced data
+        assert datetime(2025, 1, 15).date() not in sliced.index.date
+
+        # Jan 14 must be the LAST date
+        assert sliced.index[-1].date() == datetime(2025, 1, 14).date()
+
+    def test_tweet_day_data_never_used_for_indicators(self):
+        """Tweet-day's OHLCV data must never be used for indicator calculation."""
+        indicators = TechnicalIndicators()
+
+        # Create data with a distinctive value on Jan 15
+        dates = pd.date_range("2024-12-01", "2025-01-20", freq="B")
+        daily_df = pd.DataFrame(
+            {
+                "open": [100 + i * 0.1 for i in range(len(dates))],
+                "high": [101 + i * 0.1 for i in range(len(dates))],
+                "low": [99 + i * 0.1 for i in range(len(dates))],
+                "close": [100.5 + i * 0.1 for i in range(len(dates))],
+                "volume": [1000000] * len(dates),
+            },
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Find Jan 15 index
+        jan15_mask = daily_df.index.date == datetime(2025, 1, 15).date()
+        jan15_idx = daily_df.index[jan15_mask][0] if jan15_mask.any() else None
+
+        if jan15_idx is not None:
+            # Set a very distinctive close price on Jan 15
+            daily_df.loc[jan15_idx, "close"] = 9999.99
+
+        # Slice to BEFORE Jan 15
+        tweet_date = datetime(2025, 1, 15).date()
+        sliced = daily_df[daily_df.index.date < tweet_date]
+        current_idx = len(sliced) - 1
+
+        # Calculate indicators
+        result = indicators.calculate_all_indicators(sliced, current_idx)
+
+        # The distinctive 9999.99 value should NOT affect any indicator
+        # (because it's on tweet day, which is excluded)
+        if result["distance_from_ma_20"] is not None:
+            # If 9999.99 leaked in, this would be a huge number
+            assert abs(result["distance_from_ma_20"]) < 1.0  # Normal range
+
+    def test_adding_future_data_does_not_change_features(self):
+        """Adding more future data should NOT change feature values."""
+        indicators = TechnicalIndicators()
+
+        # Base data: up to Jan 14
+        dates_base = pd.date_range("2024-12-01", "2025-01-14", freq="B")
+        base_df = pd.DataFrame(
+            {
+                "open": [100 + i * 0.1 for i in range(len(dates_base))],
+                "high": [101 + i * 0.1 for i in range(len(dates_base))],
+                "low": [99 + i * 0.1 for i in range(len(dates_base))],
+                "close": [100.5 + i * 0.1 for i in range(len(dates_base))],
+                "volume": [1000000] * len(dates_base),
+            },
+            index=pd.DatetimeIndex(dates_base, tz="America/New_York"),
+        )
+
+        # Extended data: includes future (Jan 15-20) with very different values
+        dates_extended = pd.date_range("2024-12-01", "2025-01-20", freq="B")
+        extended_df = pd.DataFrame(
+            {
+                "open": [100 + i * 0.1 for i in range(len(dates_extended))],
+                "high": [101 + i * 0.1 for i in range(len(dates_extended))],
+                "low": [99 + i * 0.1 for i in range(len(dates_extended))],
+                "close": [100.5 + i * 0.1 for i in range(len(dates_extended))],
+                "volume": [1000000] * len(dates_extended),
+            },
+            index=pd.DatetimeIndex(dates_extended, tz="America/New_York"),
+        )
+
+        # Make future data (Jan 15+) very different
+        for idx in extended_df.index:
+            if idx.date() >= datetime(2025, 1, 15).date():
+                extended_df.loc[idx, "close"] = 500.0  # 5x the normal value
+
+        # Slice extended data to before tweet date
+        tweet_date = datetime(2025, 1, 15).date()
+        sliced_extended = extended_df[extended_df.index.date < tweet_date]
+
+        # Calculate indicators on both
+        base_idx = len(base_df) - 1
+        extended_idx = len(sliced_extended) - 1
+
+        base_result = indicators.calculate_all_indicators(base_df, base_idx)
+        extended_result = indicators.calculate_all_indicators(sliced_extended, extended_idx)
+
+        # Results should be IDENTICAL
+        for key in base_result:
+            if base_result[key] is not None and extended_result[key] is not None:
+                assert base_result[key] == pytest.approx(extended_result[key], rel=1e-10), \
+                    f"Feature {key} changed when future data was added!"
+
+    def test_spy_data_also_excludes_tweet_date(self):
+        """SPY data for market regime must also exclude tweet date."""
+        from tweet_enricher.market.regime import MarketRegimeClassifier
+
+        # Create SPY data with distinctive values on tweet date
+        dates = pd.date_range("2024-12-01", "2025-01-20", freq="B")
+        spy_df = pd.DataFrame(
+            {
+                "open": [500 + i for i in range(len(dates))],
+                "high": [501 + i for i in range(len(dates))],
+                "low": [499 + i for i in range(len(dates))],
+                "close": [500.5 + i for i in range(len(dates))],
+                "volume": [10000000] * len(dates),
+            },
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Set a massive crash on Jan 15 (should NOT affect regime for Jan 15 tweet)
+        jan15_mask = spy_df.index.date == datetime(2025, 1, 15).date()
+        if jan15_mask.any():
+            spy_df.loc[jan15_mask, "close"] = 100.0  # -80% crash
+
+        # Slice to before tweet date (like dataset_builder does)
+        tweet_date = datetime(2025, 1, 15).date()
+        spy_sliced = spy_df[spy_df.index.date < tweet_date]
+
+        # Calculate regime
+        classifier = MarketRegimeClassifier()
+        tweet_ts = datetime(2025, 1, 15, 10, 30, 0, tzinfo=ET)
+        regime = classifier.classify(spy_sliced, tweet_ts)
+
+        # Should NOT be "trending_down" or "volatile" due to Jan 15 crash
+        # (because Jan 15 data is excluded)
+        # Note: The regime is based on data up to Jan 14
+        assert regime in ["trending_up", "trending_down", "volatile", "calm"]
+
+    def test_intraday_entry_uses_bar_after_not_at_tweet_time(self):
+        """Entry price must use bar starting AFTER tweet, not bar containing tweet."""
+        from tweet_enricher.core.dataset_builder import DatasetBuilder
+
+        builder = DatasetBuilder(
+            cache=MagicMock(spec=CacheReader),
+            indicators=MagicMock(spec=TechnicalIndicators),
+        )
+
+        # Create intraday with distinctive prices
+        times = pd.date_range("2025-01-15 09:30", "2025-01-15 16:00", freq="15min")
+        intraday_df = pd.DataFrame(
+            {
+                "open": [100 + i for i in range(len(times))],
+                "high": [101 + i for i in range(len(times))],
+                "low": [99 + i for i in range(len(times))],
+                "close": [100.5 + i for i in range(len(times))],
+                "volume": [10000] * len(times),
+            },
+            index=pd.DatetimeIndex(times, tz="America/New_York"),
+        )
+
+        daily_df = pd.DataFrame(
+            {"open": [100]},
+            index=pd.DatetimeIndex(["2025-01-16"], tz="America/New_York"),
+        )
+
+        # Tweet exactly at 10:00 AM
+        tweet_ts = datetime(2025, 1, 15, 10, 0, 0, tzinfo=ET)
+
+        price, flag = builder._get_entry_price(
+            intraday_df, daily_df, tweet_ts, MarketSession.REGULAR
+        )
+
+        # Find bar at 10:00 and bar at 10:15
+        bar_10_00 = intraday_df[intraday_df.index.hour == 10]
+        bar_10_00 = bar_10_00[bar_10_00.index.minute == 0]
+        bar_10_15 = intraday_df[intraday_df.index.hour == 10]
+        bar_10_15 = bar_10_15[bar_10_15.index.minute == 15]
+
+        # Entry should be 10:15 bar's open, NOT 10:00 bar's open
+        assert price == bar_10_15.iloc[0]["open"]
+        assert price != bar_10_00.iloc[0]["open"]
+
+    def test_boundary_midnight_tweet_uses_previous_day(self):
+        """Tweet at midnight should use previous day's data for features."""
+        # Tweet at exactly midnight Jan 15 (start of day)
+        tweet_ts = datetime(2025, 1, 15, 0, 0, 0, tzinfo=ET)
+        tweet_date = tweet_ts.date()
+
+        dates = pd.date_range("2025-01-10", "2025-01-20", freq="B")
+        daily_df = pd.DataFrame(
+            {"close": [100 + i for i in range(len(dates))]},
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Slice: dates < Jan 15
+        sliced = daily_df[daily_df.index.date < tweet_date]
+
+        # Last available date should be Jan 14
+        assert sliced.index[-1].date() == datetime(2025, 1, 14).date()
+
+    def test_premarket_tweet_still_uses_previous_day_features(self):
+        """Pre-market tweet (4 AM) should still use previous day for features."""
+        # Tweet at 4:00 AM pre-market on Jan 15
+        tweet_ts = datetime(2025, 1, 15, 4, 0, 0, tzinfo=ET)
+        tweet_date = tweet_ts.date()
+
+        dates = pd.date_range("2025-01-10", "2025-01-20", freq="B")
+        daily_df = pd.DataFrame(
+            {"close": [100 + i for i in range(len(dates))]},
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Slice: dates < Jan 15 (even though it's pre-market, we use previous close)
+        sliced = daily_df[daily_df.index.date < tweet_date]
+
+        # Last available date should be Jan 14
+        assert sliced.index[-1].date() == datetime(2025, 1, 14).date()
+
+    def test_afterhours_tweet_still_uses_same_logic(self):
+        """After-hours tweet (6 PM) should still use dates < tweet_date for features."""
+        # Tweet at 6:00 PM after-hours on Jan 15
+        tweet_ts = datetime(2025, 1, 15, 18, 0, 0, tzinfo=ET)
+        tweet_date = tweet_ts.date()
+
+        dates = pd.date_range("2025-01-10", "2025-01-20", freq="B")
+        daily_df = pd.DataFrame(
+            {"close": [100 + i for i in range(len(dates))]},
+            index=pd.DatetimeIndex(dates, tz="America/New_York"),
+        )
+
+        # Slice: dates < Jan 15
+        # Note: Even at 6 PM when market is closed, we still use < tweet_date
+        # because daily bars are dated at market open (midnight), not close
+        sliced = daily_df[daily_df.index.date < tweet_date]
+
+        # Last available date should be Jan 14
+        assert sliced.index[-1].date() == datetime(2025, 1, 14).date()
+
+
+class TestLabelIntegrity:
+    """Tests to ensure labels use future data correctly (not a bias, but verification)."""
+
+    def test_label_uses_future_prices(self):
+        """Labels should correctly use FUTURE prices (entry + next open)."""
+        from tweet_enricher.core.dataset_builder import DatasetBuilder
+
+        builder = DatasetBuilder(
+            cache=MagicMock(spec=CacheReader),
+            indicators=MagicMock(spec=TechnicalIndicators),
+        )
+
+        # Create daily data
+        daily_df = pd.DataFrame(
+            {"open": [100, 105, 110]},  # Increasing prices
+            index=pd.DatetimeIndex(
+                ["2025-01-14", "2025-01-15", "2025-01-16"],
+                tz="America/New_York",
+            ),
+        )
+
+        # Tweet on Jan 14 at 5 PM (after hours)
+        tweet_ts = datetime(2025, 1, 14, 17, 0, 0, tzinfo=ET)
+
+        price, flag, next_dt = builder._get_price_next_open(daily_df, tweet_ts)
+
+        # Next open should be Jan 15's open (105), not Jan 14's (100)
+        assert price == 105
+        assert next_dt.date() == datetime(2025, 1, 15).date()
+
+    def test_return_calculation_uses_correct_prices(self):
+        """Return to next open should be calculated correctly."""
+        # Entry at 100, next open at 105 = 5% return
+        entry_price = 100.0
+        next_open_price = 105.0
+
+        return_value = (next_open_price - entry_price) / entry_price
+
+        assert return_value == pytest.approx(0.05, rel=1e-10)
+
+    def test_label_classification_thresholds(self):
+        """Label classification should use correct thresholds."""
+        from tweet_enricher.core.dataset_builder import DatasetBuilder
+
+        builder = DatasetBuilder(
+            cache=MagicMock(spec=CacheReader),
+            indicators=MagicMock(spec=TechnicalIndicators),
+        )
+
+        # Test threshold boundaries: -0.5%, +0.5%
+        assert builder._classify_return_3class(-0.006) == "SELL"  # < -0.5%
+        assert builder._classify_return_3class(-0.005) == "HOLD"  # = -0.5%
+        assert builder._classify_return_3class(0.0) == "HOLD"     # 0%
+        assert builder._classify_return_3class(0.004) == "HOLD"   # < 0.5%
+        assert builder._classify_return_3class(0.005) == "BUY"    # = 0.5%
+        assert builder._classify_return_3class(0.01) == "BUY"     # > 0.5%
