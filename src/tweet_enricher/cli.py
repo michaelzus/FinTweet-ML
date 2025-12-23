@@ -18,19 +18,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
-import pandas_market_calendars as mcal
 
 from tweet_enricher.config import (
     DAILY_DATA_DIR,
     ET,
     EXCLUDED_TICKERS,
     INTRADAY_CACHE_DIR,
-    INTRADAY_FETCH_DELAY,
-    MARKET_CLOSE,
     TWITTER_ACCOUNTS,
-    TWITTER_DB_PATH,
 )
-from tweet_enricher.core.enricher import TweetEnricher
 from tweet_enricher.core.indicators import TechnicalIndicators
 from tweet_enricher.data.cache import DataCache
 from tweet_enricher.data.ib_fetcher import IBHistoricalDataFetcher
@@ -722,149 +717,6 @@ def cmd_prepare(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
-# FLOW 3 (Legacy): Enrich with API calls
-# ============================================================================
-async def _enrich_data(args: argparse.Namespace) -> int:
-    """Async implementation of enrich command (legacy - with IB API calls)."""
-    logger = logging.getLogger(__name__)
-
-    # Read tweets CSV
-    logger.info(f"Reading tweets from {args.input}")
-
-    try:
-        tweets_df = pd.read_csv(args.input)
-        logger.info(f"Loaded {len(tweets_df)} tweets")
-    except Exception as e:
-        logger.error(f"Error reading tweets file: {e}")
-        return 1
-
-    # Calculate max date from dataset
-    tweets_df["timestamp"] = pd.to_datetime(tweets_df["timestamp"])
-    max_date = tweets_df["timestamp"].max() + timedelta(days=2)
-
-    # Ensure max_date is timezone-aware
-    if max_date.tzinfo is None:
-        max_date = max_date.to_pydatetime().replace(tzinfo=ET)
-    elif max_date.tzinfo != ET:
-        max_date = max_date.tz_convert(ET)
-
-    # Get last market trading day
-    nyse = mcal.get_calendar("NYSE")
-    now_et = datetime.now(ET)
-    today = now_et.date()
-    schedule = nyse.schedule(start_date=today - timedelta(days=10), end_date=today)
-
-    if not schedule.empty:
-        last_market_day = schedule.index[-1].date()
-
-        # If today is a trading day but market hasn't closed yet, use previous trading day
-        if last_market_day == today:
-            current_time_minutes = now_et.hour * 60 + now_et.minute
-            if current_time_minutes < MARKET_CLOSE:
-                logger.info(f"Market not closed yet (current time: {now_et.strftime('%H:%M')} ET)")
-                if len(schedule) > 1:
-                    last_market_day = schedule.index[-2].date()
-                    logger.info(f"Using previous trading day: {last_market_day}")
-                else:
-                    extended_schedule = nyse.schedule(start_date=today - timedelta(days=30), end_date=today)
-                    if len(extended_schedule) > 1:
-                        last_market_day = extended_schedule.index[-2].date()
-                        logger.info(f"Using previous trading day: {last_market_day}")
-
-        last_market_datetime = datetime.combine(last_market_day, datetime.max.time()).replace(tzinfo=ET)
-        max_date = min(max_date, last_market_datetime)
-        logger.info(f"Last closed market trading day: {last_market_day}")
-    else:
-        max_date = min(max_date, datetime.now(ET))
-        logger.warning("Could not determine last market day, using current date")
-
-    min_date = tweets_df["timestamp"].min()
-    logger.info(f"Dataset date range: {min_date.date()} to {max_date.date()}")
-
-    # Extract unique tickers
-    unique_tickers = tweets_df["ticker"].unique().tolist()
-    unique_tickers.append("SPY")  # Add SPY for market adjustment
-    unique_tickers = list(set(unique_tickers))
-
-    # Filter out excluded tickers
-    excluded_count = len([t for t in unique_tickers if t in EXCLUDED_TICKERS])
-    if excluded_count > 0:
-        logger.info(f"Excluding {excluded_count} problematic tickers")
-    unique_tickers = [t for t in unique_tickers if t not in EXCLUDED_TICKERS]
-
-    logger.info(f"Found {len(unique_tickers)} unique tickers in dataset")
-
-    # Initialize components
-    ib_fetcher = IBHistoricalDataFetcher(host=args.host, port=args.port, client_id=args.client_id)
-    cache = DataCache(ib_fetcher)
-    indicators = TechnicalIndicators()
-    metadata_cache = StockMetadataCache()
-    enricher = TweetEnricher(ib_fetcher, cache, indicators, metadata_cache)
-
-    # Connect to IB (if connection fails, try to continue with cached data only)
-    connected = await enricher.connect()
-    if not connected:
-        logger.warning("Failed to connect to IB - will attempt to use cached data only")
-        logger.warning("If enrichment fails, please start TWS/Gateway and try again")
-
-    try:
-        # Pre-fetch all ticker data
-        logger.info("=" * 80)
-        logger.info("PHASE 1: Pre-fetching ALL ticker data (daily + intraday)")
-        logger.info("=" * 80)
-
-        logger.info("Step 1/2: Fetching daily data...")
-        await cache.prefetch_all_daily_data(unique_tickers, max_date)
-
-        logger.info("Step 2/2: Fetching intraday data...")
-        await cache.prefetch_all_intraday_data(unique_tickers, max_date)
-
-        logger.info(f"Phase 1 complete! Cached data for {len(unique_tickers)} tickers")
-        logger.info("=" * 80)
-
-        # Process all tweets
-        logger.info("PHASE 2: Processing tweets")
-        logger.info("=" * 80)
-
-        output_df = await enricher.enrich_dataframe(tweets_df, max_date)
-
-        # Save results
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_df.to_csv(output_path, index=False)
-        logger.info(f"Saved {len(output_df)} enriched tweets to: {output_path}")
-
-        # Summary
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("SUMMARY")
-        logger.info("=" * 80)
-        successful = sum(1 for _, r in output_df.iterrows() if r["entry_price"] is not None)
-        logger.info(f"Total processed: {len(output_df)}")
-        logger.info(f"Successful: {successful}")
-        logger.info(f"Failed: {len(output_df) - successful}")
-
-        # Label distribution
-        labels = output_df["label_1d_3class"].dropna().tolist()
-        if labels:
-            label_counts = Counter(labels)
-            logger.info("\nLabel distribution (1-day 3-class):")
-            for label, count in sorted(label_counts.items()):
-                logger.info(f"  {label}: {count}")
-
-    finally:
-        await enricher.disconnect()
-
-    return 0
-
-
-def cmd_enrich(args: argparse.Namespace) -> int:
-    """Enrich tweets with market data (legacy - requires IB connection)."""
-    setup_logging(args.verbose)
-    return asyncio.run(_enrich_data(args))
-
-
-# ============================================================================
 # FLOW 4: Training Commands
 # ============================================================================
 def cmd_train(args: argparse.Namespace) -> int:
@@ -1140,26 +992,6 @@ Examples:
     prepare_parser.add_argument("-q", "--quiet", action="store_true", help="Suppress verbose output, show only progress bars")
     prepare_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     prepare_parser.set_defaults(func=cmd_prepare)
-
-    # ============ enrich subcommand (Legacy - kept for backward compatibility) ============
-    enrich_parser = subparsers.add_parser(
-        "enrich",
-        help="[Legacy] Enrich tweets with market data (requires IB connection)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-NOTE: This is a legacy command. For offline dataset preparation, use 'prepare' instead.
-
-Examples:
-  fintweet-ml enrich -i tweets.csv -o enriched.csv
-        """,
-    )
-    enrich_parser.add_argument("-i", "--input", type=str, required=True, help="Input tweets CSV file")
-    enrich_parser.add_argument("-o", "--output", type=str, required=True, help="Output enriched CSV file")
-    enrich_parser.add_argument("--host", default="127.0.0.1", help="TWS/Gateway host (default: 127.0.0.1)")
-    enrich_parser.add_argument("--port", type=int, default=7497, help="TWS/Gateway port (default: 7497)")
-    enrich_parser.add_argument("--client-id", type=int, default=1, help="Client ID (default: 1)")
-    enrich_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
-    enrich_parser.set_defaults(func=cmd_enrich)
 
     # ============ train subcommand (Flow 4) ============
     train_parser = subparsers.add_parser(
