@@ -23,10 +23,6 @@ class SyncState:
     last_cursor: Optional[str]
     last_sync_at: Optional[datetime]
     total_tweets: int
-    # Backfill state
-    backfill_cursor: Optional[str] = None
-    backfill_target_date: Optional[str] = None
-    backfill_complete: bool = False
 
 
 @dataclass
@@ -173,9 +169,6 @@ class TweetDatabase:
                     last_cursor=row["last_cursor"],
                     last_sync_at=last_sync_at,
                     total_tweets=row["total_tweets"] or 0,
-                    backfill_cursor=row["backfill_cursor"] if "backfill_cursor" in row.keys() else None,
-                    backfill_target_date=row["backfill_target_date"] if "backfill_target_date" in row.keys() else None,
-                    backfill_complete=bool(row["backfill_complete"]) if "backfill_complete" in row.keys() else False,
                 )
             return None
 
@@ -234,42 +227,9 @@ class TweetDatabase:
                         last_cursor=row["last_cursor"],
                         last_sync_at=last_sync_at,
                         total_tweets=row["total_tweets"] or 0,
-                        backfill_cursor=row["backfill_cursor"] if "backfill_cursor" in row.keys() else None,
-                        backfill_target_date=row["backfill_target_date"] if "backfill_target_date" in row.keys() else None,
-                        backfill_complete=bool(row["backfill_complete"]) if "backfill_complete" in row.keys() else False,
                     )
                 )
             return states
-
-    def update_backfill_state(
-        self,
-        account: str,
-        cursor: Optional[str] = None,
-        target_date: Optional[str] = None,
-        complete: bool = False,
-    ) -> None:
-        """
-        Update backfill state for an account.
-
-        Args:
-            account: Twitter username
-            cursor: Pagination cursor for resuming
-            target_date: Target date for backfill (ISO format)
-            complete: Whether backfill is complete
-        """
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO sync_state (account, backfill_cursor, backfill_target_date, backfill_complete)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(account) DO UPDATE SET
-                    backfill_cursor = excluded.backfill_cursor,
-                    backfill_target_date = COALESCE(excluded.backfill_target_date, backfill_target_date),
-                    backfill_complete = excluded.backfill_complete
-                """,
-                (account, cursor, target_date, 1 if complete else 0),
-            )
-            conn.commit()
 
     # =========================================================================
     # Raw Tweet Operations
@@ -331,7 +291,7 @@ class TweetDatabase:
             try:
                 conn.execute(
                     """
-                    INSERT INTO tweets_processed 
+                    INSERT INTO tweets_processed
                     (id, timestamp_utc, timestamp_et, author, ticker, tweet_url, category, text)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -367,7 +327,7 @@ class TweetDatabase:
                 try:
                     conn.execute(
                         """
-                        INSERT INTO tweets_processed 
+                        INSERT INTO tweets_processed
                         (id, timestamp_utc, timestamp_et, author, ticker, tweet_url, category, text)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
@@ -509,9 +469,9 @@ class TweetDatabase:
         with self._get_connection() as conn:
             rows = conn.execute(
                 """
-                SELECT ticker, MIN(timestamp_et) as first_date 
-                FROM tweets_processed 
-                GROUP BY ticker 
+                SELECT ticker, MIN(timestamp_et) as first_date
+                FROM tweets_processed
+                GROUP BY ticker
                 ORDER BY ticker
                 """
             ).fetchall()
@@ -535,8 +495,8 @@ class TweetDatabase:
             rows = conn.execute(
                 """
                 SELECT ticker, MIN(timestamp_et) as first_date, MAX(timestamp_et) as last_date
-                FROM tweets_processed 
-                GROUP BY ticker 
+                FROM tweets_processed
+                GROUP BY ticker
                 ORDER BY ticker
                 """
             ).fetchall()

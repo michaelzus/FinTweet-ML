@@ -311,8 +311,6 @@ class SyncService:
         max_tweets: Optional[int] = None,
         months_back: Optional[int] = None,
         show_progress: bool = False,
-        resume: bool = False,
-        use_date_search: bool = False,
     ) -> dict:
         """
         Sync tweets for a single account.
@@ -320,20 +318,21 @@ class SyncService:
         Uses smart incremental fetching: stops API pagination immediately
         when reaching tweets we already have, minimizing API costs.
 
+        For historical backfill (months_back), uses day-by-day approach with
+        automatic resume via journal.
+
         Args:
             account: Twitter username
-            full_sync: If True, ignore cursor and fetch all available tweets
+            full_sync: If True, ignore existing tweets and fetch all available
             max_tweets: Maximum tweets to fetch (None = no limit)
-            months_back: Fetch tweets going back N months from now
+            months_back: Fetch tweets going back N months (uses day-by-day approach)
             show_progress: Show real-time progress updates
-            resume: Resume from last backfill cursor
-            use_date_search: Use month-by-month date-based search (better for historical)
 
         Returns:
             Dict with sync results including API calls made
         """
-        # Use date-based search for historical backfill if requested
-        if use_date_search and months_back:
+        # Use day-by-day search for historical backfill (auto-resumes via journal)
+        if months_back:
             return self.sync_account_by_month(
                 account=account,
                 months_back=months_back,
@@ -345,21 +344,11 @@ class SyncService:
         # Get current sync state
         state = self.database.get_sync_state(account)
 
-        # Calculate target date for historical backfill
-        until_date = None
-        if months_back:
-            until_date = datetime.now(timezone.utc) - timedelta(days=months_back * 30)
-            logger.info(f"Historical backfill: fetching back to {until_date.date()}")
-
         # Determine exists_check behavior
         if full_sync:
             logger.info("Full sync (will re-fetch all tweets)")
             # For full sync, don't check existing tweets at all
             exists_check: Callable[[str], bool] = lambda tweet_id: False
-        elif months_back:
-            logger.info("Historical backfill (will skip existing tweets, fill gaps)")
-            # For backfill: check database to skip existing, but continue pagination
-            exists_check = self.database.tweet_exists
         else:
             if state and state.last_tweet_id:
                 logger.info(f"Incremental sync (last tweet: {state.last_tweet_id})")
@@ -368,28 +357,29 @@ class SyncService:
             # Check database for existing tweets
             exists_check = self.database.tweet_exists
 
-        # Resume support
-        start_cursor = None
-        if resume and state and state.backfill_cursor:
-            start_cursor = state.backfill_cursor
-            logger.info(f"Resuming from cursor: {start_cursor[:20]}...")
-
         # Track fetch progress
         raw_count = 0
         processed_count = 0
         api_calls = 0
         new_tweets: list[ProcessedTweet] = []
         first_tweet_id = None
-        last_cursor = None
         skipped_existing = 0
+        dates_fetched: set[str] = set()  # Track unique dates for journal update
 
         # IMMEDIATE SAVE callback - saves raw tweet right away (crash-safe)
         def save_callback(tweet: Tweet) -> bool:
-            nonlocal raw_count, first_tweet_id, new_tweets
+            nonlocal raw_count, first_tweet_id
 
             # Track first (most recent) tweet ID
             if first_tweet_id is None:
                 first_tweet_id = tweet.id
+
+            # Track date for journal update
+            try:
+                dt = datetime.strptime(tweet.created_at, "%a %b %d %H:%M:%S %z %Y")
+                dates_fetched.add(dt.strftime("%Y-%m-%d"))
+            except ValueError:
+                pass
 
             # Save raw tweet IMMEDIATELY (INSERT OR IGNORE for duplicates)
             saved = self.database.insert_raw_tweet(tweet.id, account, tweet.raw_json)
@@ -405,11 +395,10 @@ class SyncService:
             return saved
 
         # Progress callback
-        progress_callback = None
+        progress_callback: Optional[Callable[[dict], None]] = None
         if show_progress:
-            target_date_str = until_date.strftime("%Y-%m-%d") if until_date else "latest"
 
-            def progress_callback(progress: dict) -> None:
+            def _progress_callback(progress: dict) -> None:
                 nonlocal skipped_existing
                 skipped_existing = progress.get("skipped_existing", 0)
                 skip_info = f" | Skipped: {skipped_existing}" if skipped_existing > 0 else ""
@@ -420,16 +409,18 @@ class SyncService:
                 )
                 sys.stdout.flush()
 
+            progress_callback = _progress_callback
+
         try:
             # Use cost-optimized incremental fetch with immediate save
-            fetched_tweets, api_calls, last_cursor = self.client.fetch_tweets_incremental(
+            fetched_tweets, api_calls, _ = self.client.fetch_tweets_incremental(
                 username=account,
                 exists_check=exists_check,
                 max_tweets=max_tweets,
-                until_date=until_date,
+                until_date=None,
                 include_replies=False,
                 progress_callback=progress_callback,
-                start_cursor=start_cursor,
+                start_cursor=None,
                 save_callback=save_callback,  # IMMEDIATE SAVE
             )
 
@@ -440,19 +431,32 @@ class SyncService:
             logger.error(f"Error fetching tweets for @{account}: {e}")
             if show_progress:
                 sys.stdout.write("\n")  # New line after progress
-            # Save cursor for resume if we have one
-            if last_cursor and months_back:
-                self.database.update_backfill_state(
-                    account=account,
-                    cursor=last_cursor,
-                    target_date=until_date.isoformat() if until_date else None,
-                    complete=False,
-                )
-                logger.info(f"Saved cursor for resume (saved {raw_count} tweets before error)")
             raise
 
         # Processed count is number of processed tweet rows created
         processed_count = len(new_tweets)
+
+        # Mark fetched days in journal (exclude today - more tweets may come)
+        # Mark ALL days in the range (including days with no tweets)
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if dates_fetched:
+            min_date = min(dates_fetched)
+            max_date = max(dates_fetched)
+
+            # Iterate through all dates from min to max
+            current = datetime.strptime(min_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = datetime.strptime(max_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+            while current <= end:
+                date_str = current.strftime("%Y-%m-%d")
+                if date_str != today_str:
+                    self.database.mark_day_fetched(
+                        account=account,
+                        date=date_str,
+                        tweets_count=0,
+                        api_calls=0,
+                    )
+                current += timedelta(days=1)
 
         # Update sync state
         if first_tweet_id:
@@ -460,17 +464,6 @@ class SyncService:
                 account=account,
                 last_tweet_id=first_tweet_id,
                 tweets_added=processed_count,
-            )
-
-        # Update backfill state
-        if months_back:
-            # Mark complete if we reached the target date (no more cursor)
-            complete = last_cursor is None
-            self.database.update_backfill_state(
-                account=account,
-                cursor=last_cursor,
-                target_date=until_date.isoformat() if until_date else None,
-                complete=complete,
             )
 
         result = {
@@ -493,19 +486,15 @@ class SyncService:
         max_tweets_per_account: Optional[int] = None,
         months_back: Optional[int] = None,
         show_progress: bool = False,
-        resume: bool = False,
-        use_date_search: bool = False,
     ) -> list[dict]:
         """
         Sync all configured accounts.
 
         Args:
-            full_sync: If True, ignore cursors and fetch all available tweets
+            full_sync: If True, ignore existing tweets and fetch all available
             max_tweets_per_account: Maximum tweets to fetch per account
-            months_back: Fetch tweets going back N months
+            months_back: Fetch tweets going back N months (uses day-by-day approach)
             show_progress: Show real-time progress updates
-            resume: Resume from last backfill cursor
-            use_date_search: Use month-by-month date-based search (better for historical)
 
         Returns:
             List of sync results per account
@@ -529,8 +518,6 @@ class SyncService:
                     max_tweets=max_tweets_per_account,
                     months_back=months_back,
                     show_progress=show_progress,
-                    resume=resume,
-                    use_date_search=use_date_search,
                 )
                 results.append(result)
             except Exception as e:
@@ -599,7 +586,6 @@ class SyncService:
 
         # Format sync states - use actual counts from database
         accounts_status = []
-        synced_accounts = {s.account for s in states}
 
         for account in self.accounts:
             state = next((s for s in states if s.account == account), None)

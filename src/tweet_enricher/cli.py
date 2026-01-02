@@ -385,7 +385,7 @@ def cmd_ohlcv_status(args: argparse.Namespace) -> int:
 
     stats = cache.get_cache_stats()
     daily_symbols = cache.list_available_symbols("daily")
-    intraday_symbols = cache.list_available_symbols("intraday")
+    _ = cache.list_available_symbols("intraday")  # Called for side effects, count in stats
 
     print("\n" + "=" * 60)
     print("OHLCV CACHE STATUS")
@@ -454,8 +454,6 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
             return 1
         logger.info("Connection successful!")
 
-        # Check for resume mode
-        resume = getattr(args, "resume", False)
         show_progress = months is not None  # Show progress for historical backfill
 
         # Perform sync
@@ -469,8 +467,6 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
                 max_tweets=args.max_tweets,
                 months_back=months,
                 show_progress=show_progress,
-                resume=resume,
-                use_date_search=getattr(args, "date_search", False),
             )
             results = [result]
         else:
@@ -482,8 +478,6 @@ def cmd_twitter_sync(args: argparse.Namespace) -> int:
                 max_tweets_per_account=args.max_tweets,
                 months_back=months,
                 show_progress=show_progress,
-                resume=resume,
-                use_date_search=getattr(args, "date_search", False),
             )
 
         # Print summary
@@ -933,12 +927,10 @@ Examples:
         """,
     )
     twitter_sync_parser.add_argument("--account", help="Specific account to sync (default: all)")
-    twitter_sync_parser.add_argument("--months", type=int, help="Historical backfill: fetch N months of tweets")
+    twitter_sync_parser.add_argument("--months", type=int, help="Historical backfill: fetch N months of tweets (auto-resumes via journal)")
     twitter_sync_parser.add_argument("--estimate", action="store_true", help="Show time/cost estimate without fetching")
-    twitter_sync_parser.add_argument("--resume", action="store_true", help="Resume interrupted backfill from last cursor")
-    twitter_sync_parser.add_argument("--full", action="store_true", help="Full re-sync, ignore previous cursor")
+    twitter_sync_parser.add_argument("--full", action="store_true", help="Full re-sync, ignore previous state")
     twitter_sync_parser.add_argument("--max-tweets", type=int, help="Max tweets to fetch per account")
-    twitter_sync_parser.add_argument("--date-search", action="store_true", help="Use date-based search (better for 6+ month history)")
     twitter_sync_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     twitter_sync_parser.set_defaults(func=cmd_twitter_sync)
 

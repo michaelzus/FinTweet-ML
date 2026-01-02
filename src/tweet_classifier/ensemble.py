@@ -270,3 +270,4 @@ def compute_ensemble_trading_metrics(
     results["n_top_trades"] = n_top
 
     return results
+

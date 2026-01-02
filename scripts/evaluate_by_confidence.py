@@ -3,13 +3,15 @@
 
 This script analyzes how IC, directional accuracy, and trading metrics
 improve when filtering to high-confidence predictions only.
+
+Supports filtering by a list of allowed tickers.
 """
 
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -26,6 +28,20 @@ from tweet_classifier.data.loader import filter_reliable, load_enriched_data
 from tweet_classifier.data.splitter import split_by_time
 from tweet_classifier.dataset import create_dataset_from_df
 from tweet_classifier.evaluate import evaluate_on_test, load_model_for_evaluation
+
+
+def load_ticker_filter(ticker_file: Path) -> Set[str]:
+    """Load list of allowed tickers from CSV file."""
+    df = pd.read_csv(ticker_file)
+    # Handle different column names
+    if "symbol" in df.columns:
+        tickers = set(df["symbol"].str.upper().dropna())
+    elif "ticker" in df.columns:
+        tickers = set(df["ticker"].str.upper().dropna())
+    else:
+        # Assume first column contains tickers
+        tickers = set(df.iloc[:, 0].str.upper().dropna())
+    return tickers
 
 
 def compute_metrics_at_threshold(
@@ -296,8 +312,15 @@ def main() -> None:
         default=[0.0, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90],
         help="Confidence thresholds to evaluate",
     )
+    parser.add_argument("--tickers", type=Path, help="CSV file with allowed tickers (filters predictions)")
     parser.add_argument("--output", type=Path, help="Optional JSON output file")
     args = parser.parse_args()
+
+    # Load ticker filter if provided
+    ticker_filter: Optional[Set[str]] = None
+    if args.tickers:
+        ticker_filter = load_ticker_filter(args.tickers)
+        print(f"Loaded {len(ticker_filter)} tickers from {args.tickers}")
 
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -338,6 +361,33 @@ def main() -> None:
     probabilities = eval_results["probabilities"]
     labels = eval_results["labels"]
     returns = df_test["return_to_next_open"].values
+
+    # Get ticker/symbol column
+    if "ticker" in df_test.columns:
+        symbols = df_test["ticker"].str.upper().values
+    elif "symbol" in df_test.columns:
+        symbols = df_test["symbol"].str.upper().values
+    else:
+        symbols = None
+
+    # Apply ticker filter if provided
+    if ticker_filter is not None and symbols is not None:
+        ticker_mask = np.array([s in ticker_filter for s in symbols])
+        n_before = len(predictions)
+        predictions = predictions[ticker_mask]
+        probabilities = probabilities[ticker_mask]
+        labels = labels[ticker_mask]
+        returns = returns[ticker_mask]
+        symbols = symbols[ticker_mask]
+        print(f"\nFiltered to {len(predictions)} samples ({len(predictions)/n_before:.1%}) matching ticker list")
+
+        # Show ticker coverage stats
+        unique_symbols = set(symbols)
+        matching_tickers = unique_symbols & ticker_filter
+        print(f"Unique tickers in filtered data: {len(unique_symbols)}")
+        print(f"Tickers from filter list found: {len(matching_tickers)}")
+    elif ticker_filter is not None and symbols is None:
+        print("\n⚠️  Warning: No 'symbol' column in data, cannot filter by tickers")
 
     # Confidence distribution
     max_conf = probabilities.max(axis=1)
