@@ -283,18 +283,18 @@ Samples are marked as "reliable" when:
 
 ## Train/Validation/Test Split
 
-### Strategy: Temporal Split (80/10/10)
+### Strategy: Temporal Split (70/15/15)
 
 ```mermaid
 gantt
     title Temporal Data Split
     dateFormat YYYY-MM
     section Training
-    Train 80%    :train, 2024-01, 2024-10
+    Train 70%    :train, 2024-01, 2024-09
     section Validation
-    Val 10%      :val, 2024-10, 2024-11
+    Val 15%      :val, 2024-09, 2024-11
     section Testing
-    Test 10%     :test, 2024-11, 2024-12
+    Test 15%     :test, 2024-11, 2025-01
 ```
 
 **Why Temporal Split?**
@@ -303,18 +303,12 @@ gantt
 - Tests true generalization to unseen time periods
 
 **Split Ratios:**
-- Train: 80%
-- Validation: 10%
-- Test: 10%
+- Train: 70%
+- Validation: 15%
+- Test: 15%
 
-### Distribution Shift Analysis
-
-The 80/10/10 split was chosen to minimize class distribution shift:
-
-| Split | Train→Test SELL Shift |
-|-------|----------------------|
-| 70/15/15 | +9.0% (bad) |
-| **80/10/10** | **+2.6%** (acceptable) |
+**Note:** With the full 2025 dataset (43k+ samples), the standard 70/15/15 split provides
+larger validation/test sets (~6.5k samples each) for more reliable evaluation metrics.
 
 ---
 
