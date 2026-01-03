@@ -729,6 +729,7 @@ def cmd_train(args: argparse.Namespace) -> int:
             num_epochs=args.epochs,
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
             freeze_bert=args.freeze_bert,
             dropout=args.dropout,
             evaluate_test=args.evaluate_test,
@@ -1007,6 +1008,7 @@ Examples:
     train_parser.add_argument("--temporal-split", action="store_true", help="Use temporal split instead of random hash split")
     train_parser.add_argument("--early-stopping-patience", type=int, default=2, help="Early stopping patience (default: 2)")
     train_parser.add_argument("--buy-weight-boost", type=float, default=1.0, help="BUY class weight multiplier (default: 1.0)")
+    train_parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay for AdamW optimizer (default: 0.01)")
     train_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     train_parser.set_defaults(func=cmd_train)
 

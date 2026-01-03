@@ -125,6 +125,7 @@ def train(
     num_epochs: int = DEFAULT_NUM_EPOCHS,
     batch_size: int = DEFAULT_BATCH_SIZE,
     learning_rate: float = DEFAULT_LEARNING_RATE,
+    weight_decay: float = DEFAULT_WEIGHT_DECAY,
     freeze_bert: bool = False,
     dropout: float = DEFAULT_DROPOUT,
     evaluate_test: bool = False,
@@ -140,6 +141,7 @@ def train(
         num_epochs: Number of training epochs.
         batch_size: Batch size per device.
         learning_rate: Initial learning rate.
+        weight_decay: Weight decay for AdamW optimizer (L2 regularization).
         freeze_bert: If True, freeze BERT parameters (faster training).
         dropout: Dropout probability for regularization.
         evaluate_test: If True, run full evaluation on test set after training.
@@ -283,6 +285,7 @@ def train(
         num_epochs=num_epochs,
         batch_size=batch_size,
         learning_rate=learning_rate,
+        weight_decay=weight_decay,
     )
 
     # ========== Step 9: Initialize trainer with early stopping ==========
@@ -436,6 +439,12 @@ def main() -> None:
         default=1.0,
         help="Multiplier for BUY class weight (>1.0 improves BUY recall, e.g., 1.4)",
     )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=DEFAULT_WEIGHT_DECAY,
+        help="Weight decay for AdamW optimizer (L2 regularization)",
+    )
 
     args = parser.parse_args()
 
@@ -445,6 +454,7 @@ def main() -> None:
         num_epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
         freeze_bert=args.freeze_bert,
         dropout=args.dropout,
         evaluate_test=args.evaluate_test,
