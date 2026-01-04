@@ -81,6 +81,29 @@ def apply_buy_boost(weights: np.ndarray, boost: float) -> np.ndarray:
     return boosted
 
 
+def apply_class_boosts(
+    weights: np.ndarray,
+    buy_boost: float = 1.0,
+    sell_boost: float = 1.0,
+) -> np.ndarray:
+    """Apply multiplicative boosts to class weights.
+
+    Args:
+        weights: Array of class weights [SELL, HOLD, BUY].
+        buy_boost: Multiplier for BUY weight (e.g., 1.4 = 40% increase).
+        sell_boost: Multiplier for SELL weight (e.g., 1.3 = 30% increase).
+
+    Returns:
+        Modified weights array with boosted weights.
+    """
+    boosted = weights.copy()
+    if sell_boost != 1.0:
+        boosted[0] *= sell_boost  # Index 0 = SELL
+    if buy_boost != 1.0:
+        boosted[2] *= buy_boost  # Index 2 = BUY
+    return boosted
+
+
 def get_weight_summary(
     labels: Union[pd.Series, np.ndarray],
     weights: Optional[np.ndarray] = None,

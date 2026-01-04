@@ -58,6 +58,7 @@ class FinBERTMultiModal(nn.Module):
         sector_embedding_dim: int = SECTOR_EMBEDDING_DIM,  # Phase 1
         market_cap_embedding_dim: int = MARKET_CAP_EMBEDDING_DIM,  # Phase 1
         numerical_hidden_dim: int = NUMERICAL_HIDDEN_DIM,
+        classifier_hidden_dim: int = 128,
     ):
         """Initialize the multi-modal model.
 
@@ -78,6 +79,7 @@ class FinBERTMultiModal(nn.Module):
             sector_embedding_dim: Dimension of sector embeddings (Phase 1).
             market_cap_embedding_dim: Dimension of market cap embeddings (Phase 1).
             numerical_hidden_dim: Hidden dimension for numerical encoder output.
+            classifier_hidden_dim: Hidden dimension for classifier head.
         """
         super().__init__()
 
@@ -98,6 +100,7 @@ class FinBERTMultiModal(nn.Module):
         self.sector_embedding_dim = sector_embedding_dim
         self.market_cap_embedding_dim = market_cap_embedding_dim
         self.numerical_hidden_dim = numerical_hidden_dim
+        self.classifier_hidden_dim = classifier_hidden_dim
 
         # FinBERT encoder
         self.bert = BertModel.from_pretrained(finbert_model)
@@ -144,10 +147,10 @@ class FinBERTMultiModal(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(fusion_size, 128),
+            nn.Linear(fusion_size, classifier_hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, num_classes),
+            nn.Linear(classifier_hidden_dim, num_classes),
         )
 
     def forward(
@@ -221,6 +224,40 @@ class FinBERTMultiModal(nn.Module):
 
         return output
 
+    def freeze_bert_layers(self, num_layers_to_freeze: int) -> None:
+        """Freeze first N transformer layers of BERT.
+
+        Args:
+            num_layers_to_freeze: Number of layers to freeze (0-12).
+                0 = no freezing, 12 = freeze all BERT layers.
+
+        Raises:
+            ValueError: If num_layers_to_freeze is not in range 0-12.
+        """
+        if num_layers_to_freeze < 0 or num_layers_to_freeze > 12:
+            raise ValueError(f"num_layers_to_freeze must be 0-12, got {num_layers_to_freeze}")
+
+        # Freeze embeddings if freezing any layers
+        if num_layers_to_freeze > 0:
+            for param in self.bert.embeddings.parameters():
+                param.requires_grad = False
+
+        # Freeze specified number of encoder layers
+        for i, layer in enumerate(self.bert.encoder.layer):
+            if i < num_layers_to_freeze:
+                for param in layer.parameters():
+                    param.requires_grad = False
+            else:
+                for param in layer.parameters():
+                    param.requires_grad = True
+
+        # Log frozen vs trainable parameters
+        frozen = sum(p.numel() for p in self.bert.parameters() if not p.requires_grad)
+        trainable = sum(p.numel() for p in self.bert.parameters() if p.requires_grad)
+        total = frozen + trainable
+        print(f"BERT layers: {num_layers_to_freeze}/12 frozen")
+        print(f"BERT params: {frozen:,} frozen, {trainable:,} trainable ({100 * trainable / total:.1f}% trainable)")
+
     def get_config(self) -> Dict[str, Union[int, float, str, bool]]:
         """Get model configuration for serialization.
 
@@ -244,4 +281,5 @@ class FinBERTMultiModal(nn.Module):
             "sector_embedding_dim": self.sector_embedding_dim,
             "market_cap_embedding_dim": self.market_cap_embedding_dim,
             "numerical_hidden_dim": self.numerical_hidden_dim,
+            "classifier_hidden_dim": self.classifier_hidden_dim,
         }

@@ -21,6 +21,8 @@ import torch
 from transformers import BertTokenizer, EarlyStoppingCallback, TrainingArguments
 
 from tweet_classifier.config import (
+    AUTHOR_EMBEDDING_DIM,
+    CATEGORY_EMBEDDING_DIM,
     DEFAULT_BATCH_SIZE,
     DEFAULT_DATA_PATH,
     DEFAULT_DROPOUT,
@@ -31,6 +33,7 @@ from tweet_classifier.config import (
     DEFAULT_WEIGHT_DECAY,
     FINBERT_MODEL_NAME,
     NUMERICAL_FEATURES,
+    NUMERICAL_HIDDEN_DIM,
     TARGET_COLUMN,
 )
 from tweet_classifier.data.loader import filter_reliable, load_enriched_data
@@ -42,7 +45,7 @@ from tweet_classifier.data.splitter import (
     verify_no_leakage,
 )
 from tweet_classifier.data.weights import (
-    apply_buy_boost,
+    apply_class_boosts,
     compute_class_weights,
     get_weight_summary,
     weights_to_tensor,
@@ -127,11 +130,17 @@ def train(
     learning_rate: float = DEFAULT_LEARNING_RATE,
     weight_decay: float = DEFAULT_WEIGHT_DECAY,
     freeze_bert: bool = False,
+    freeze_layers: int = 0,
     dropout: float = DEFAULT_DROPOUT,
     evaluate_test: bool = False,
     temporal_split: bool = False,
     early_stopping_patience: int = 2,
     buy_weight_boost: float = 1.0,
+    sell_weight_boost: float = 1.0,
+    classifier_hidden: int = 128,
+    numerical_hidden_dim: int = NUMERICAL_HIDDEN_DIM,
+    author_embedding_dim: int = AUTHOR_EMBEDDING_DIM,
+    category_embedding_dim: int = CATEGORY_EMBEDDING_DIM,
 ) -> Optional[Dict[str, Any]]:
     """Train the FinBERT multi-modal tweet classifier.
 
@@ -142,12 +151,18 @@ def train(
         batch_size: Batch size per device.
         learning_rate: Initial learning rate.
         weight_decay: Weight decay for AdamW optimizer (L2 regularization).
-        freeze_bert: If True, freeze BERT parameters (faster training).
+        freeze_bert: If True, freeze all BERT parameters (faster training).
+        freeze_layers: Number of BERT layers to freeze (0-12). Overrides freeze_bert if > 0.
         dropout: Dropout probability for regularization.
         evaluate_test: If True, run full evaluation on test set after training.
         temporal_split: If True, split by timestamp (train early, test late).
         early_stopping_patience: Stop training if no improvement for N epochs.
         buy_weight_boost: Multiplier for BUY class weight (>1.0 improves BUY recall).
+        sell_weight_boost: Multiplier for SELL class weight (>1.0 improves SELL recall).
+        classifier_hidden: Hidden dimension for classifier head.
+        numerical_hidden_dim: Hidden dimension for numerical feature encoder.
+        author_embedding_dim: Dimension for author embeddings.
+        category_embedding_dim: Dimension for category embeddings.
 
     Returns:
         Dictionary with test evaluation results if evaluate_test=True, else None.
@@ -250,10 +265,10 @@ def train(
     logger.info("Computing class weights...")
     class_weights = compute_class_weights(df_train[TARGET_COLUMN])
 
-    # Apply BUY weight boost if specified (improves BUY recall at expense of precision)
-    if buy_weight_boost != 1.0:
-        class_weights = apply_buy_boost(class_weights, buy_weight_boost)
-        logger.info(f"Applied BUY weight boost: {buy_weight_boost}x")
+    # Apply class weight boosts if specified
+    if buy_weight_boost != 1.0 or sell_weight_boost != 1.0:
+        class_weights = apply_class_boosts(class_weights, buy_weight_boost, sell_weight_boost)
+        logger.info(f"Applied class boosts: BUY={buy_weight_boost}x, SELL={sell_weight_boost}x")
 
     class_weights_tensor = weights_to_tensor(class_weights)
 
@@ -272,9 +287,17 @@ def train(
         num_market_caps=encodings["num_market_caps"],  # Phase 1
         freeze_bert=freeze_bert,
         dropout=dropout,
+        numerical_hidden_dim=numerical_hidden_dim,
+        classifier_hidden_dim=classifier_hidden,
+        author_embedding_dim=author_embedding_dim,
+        category_embedding_dim=category_embedding_dim,
     )
 
-    if freeze_bert:
+    # Apply partial layer freezing if specified (overrides freeze_bert)
+    if freeze_layers > 0:
+        model.freeze_bert_layers(freeze_layers)
+        logger.info(f"Froze {freeze_layers}/12 BERT encoder layers")
+    elif freeze_bert:
         logger.info("BERT parameters are FROZEN (only classifier will be trained)")
     else:
         logger.info("BERT parameters are TRAINABLE (full fine-tuning)")
@@ -412,6 +435,12 @@ def main() -> None:
         help="Freeze BERT parameters (faster training, less memory)",
     )
     parser.add_argument(
+        "--freeze-layers",
+        type=int,
+        default=0,
+        help="Number of BERT layers to freeze (0-12). 0=none, 12=all. Overrides --freeze-bert",
+    )
+    parser.add_argument(
         "--dropout",
         type=float,
         default=DEFAULT_DROPOUT,
@@ -440,10 +469,42 @@ def main() -> None:
         help="Multiplier for BUY class weight (>1.0 improves BUY recall, e.g., 1.4)",
     )
     parser.add_argument(
+        "--sell-weight-boost",
+        type=float,
+        default=1.0,
+        help="Multiplier for SELL class weight (>1.0 improves SELL recall)",
+    )
+    parser.add_argument(
         "--weight-decay",
         type=float,
         default=DEFAULT_WEIGHT_DECAY,
         help="Weight decay for AdamW optimizer (L2 regularization)",
+    )
+
+    # Architecture parameters
+    parser.add_argument(
+        "--classifier-hidden",
+        type=int,
+        default=128,
+        help="Hidden dimension for classifier head",
+    )
+    parser.add_argument(
+        "--numerical-hidden-dim",
+        type=int,
+        default=NUMERICAL_HIDDEN_DIM,
+        help="Hidden dimension for numerical feature encoder",
+    )
+    parser.add_argument(
+        "--author-embedding-dim",
+        type=int,
+        default=AUTHOR_EMBEDDING_DIM,
+        help="Dimension for author embeddings",
+    )
+    parser.add_argument(
+        "--category-embedding-dim",
+        type=int,
+        default=CATEGORY_EMBEDDING_DIM,
+        help="Dimension for category embeddings",
     )
 
     args = parser.parse_args()
@@ -456,11 +517,17 @@ def main() -> None:
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         freeze_bert=args.freeze_bert,
+        freeze_layers=args.freeze_layers,
         dropout=args.dropout,
         evaluate_test=args.evaluate_test,
         temporal_split=args.temporal_split,
         early_stopping_patience=args.early_stopping_patience,
         buy_weight_boost=args.buy_weight_boost,
+        sell_weight_boost=args.sell_weight_boost,
+        classifier_hidden=args.classifier_hidden,
+        numerical_hidden_dim=args.numerical_hidden_dim,
+        author_embedding_dim=args.author_embedding_dim,
+        category_embedding_dim=args.category_embedding_dim,
     )
 
 

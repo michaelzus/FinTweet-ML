@@ -108,6 +108,7 @@ def load_model_for_evaluation(
         sector_embedding_dim=model_config.get("sector_embedding_dim", 8),
         market_cap_embedding_dim=model_config.get("market_cap_embedding_dim", 4),
         numerical_hidden_dim=model_config.get("numerical_hidden_dim", 32),
+        classifier_hidden_dim=model_config.get("classifier_hidden_dim", 128),
     )
 
     # Load weights
