@@ -53,7 +53,6 @@ OUTPUT_COLUMN_ORDER = [
     "gap_open",
     "intraday_range",
     # Data quality
-    "is_reliable_label",
     "tweet_hash",
     # Debug (prices and timing)
     "entry_price",

@@ -38,7 +38,7 @@ def load_enriched_data(path: Optional[Path] = None) -> pd.DataFrame:
     df = pd.read_csv(path)
 
     # Validate required columns
-    required_cols = [TARGET_COLUMN, TEXT_COLUMN, "tweet_hash", "is_reliable_label"]
+    required_cols = [TARGET_COLUMN, TEXT_COLUMN, "tweet_hash"]
     required_cols.extend(NUMERICAL_FEATURES)
     required_cols.extend(CATEGORICAL_FEATURES)
 
@@ -47,26 +47,6 @@ def load_enriched_data(path: Optional[Path] = None) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {missing_cols}")
 
     return df
-
-
-def filter_reliable(df: pd.DataFrame, drop_missing_target: bool = True) -> pd.DataFrame:
-    """Filter DataFrame to keep only reliable samples.
-
-    Args:
-        df: Input DataFrame with is_reliable_label column.
-        drop_missing_target: If True, also drop rows with missing TARGET_COLUMN.
-
-    Returns:
-        Filtered DataFrame with only reliable samples.
-    """
-    # Filter to reliable labels
-    df_filtered = df[df["is_reliable_label"] == True].copy()  # noqa: E712
-
-    # Optionally drop missing targets
-    if drop_missing_target:
-        df_filtered = df_filtered.dropna(subset=[TARGET_COLUMN])
-
-    return df_filtered
 
 
 def prepare_features(df: pd.DataFrame) -> dict:
@@ -116,11 +96,6 @@ def get_data_summary(df: pd.DataFrame) -> dict:
     """
     summary = {
         "total_samples": len(df),
-        "reliable_samples": (
-            df["is_reliable_label"].sum()
-            if "is_reliable_label" in df.columns
-            else len(df)
-        ),
         "target_distribution": (
             df[TARGET_COLUMN].value_counts().to_dict()
             if TARGET_COLUMN in df.columns

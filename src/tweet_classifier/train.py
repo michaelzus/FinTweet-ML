@@ -36,7 +36,7 @@ from tweet_classifier.config import (
     NUMERICAL_HIDDEN_DIM,
     TARGET_COLUMN,
 )
-from tweet_classifier.data.loader import filter_reliable, load_enriched_data
+from tweet_classifier.data.loader import load_enriched_data
 from tweet_classifier.data.splitter import (
     get_split_summary,
     get_temporal_split_summary,
@@ -176,18 +176,15 @@ def train(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ========== Step 1: Load and filter data ==========
+    # ========== Step 1: Load data ==========
     logger.info(f"Loading data from {data_path}")
     df = load_enriched_data(data_path)
     logger.info(f"Loaded {len(df)} samples")
 
-    df_reliable = filter_reliable(df)
-    logger.info(f"After filtering: {len(df_reliable)} reliable samples")
-
     # ========== Step 2: Split data ==========
     if temporal_split:
         logger.info("Splitting data by TIMESTAMP (temporal validation)...")
-        df_train, df_val, df_test = split_by_time(df_reliable)
+        df_train, df_val, df_test = split_by_time(df)
         split_summary = get_temporal_split_summary(df_train, df_val, df_test)
         logger.info(
             f"Train: {split_summary['train']['samples']} samples ({split_summary['train']['percentage']:.1f}%)"
@@ -209,7 +206,7 @@ def train(
         )
     else:
         logger.info("Splitting data by tweet_hash (random)...")
-        df_train, df_val, df_test = split_by_hash(df_reliable)
+        df_train, df_val, df_test = split_by_hash(df)
         verify_no_leakage(df_train, df_val, df_test)
         split_summary = get_split_summary(df_train, df_val, df_test)
         logger.info(

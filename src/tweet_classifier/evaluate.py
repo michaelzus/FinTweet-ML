@@ -40,7 +40,7 @@ from tweet_classifier.config import (
     NUMERICAL_FEATURES,
     TARGET_COLUMN,
 )
-from tweet_classifier.data.loader import filter_reliable, load_enriched_data
+from tweet_classifier.data.loader import load_enriched_data
 from tweet_classifier.data.splitter import split_by_hash
 from tweet_classifier.dataset import (
     create_dataset_from_df,
@@ -645,10 +645,9 @@ def evaluate(
     # Load and prepare data
     logger.info(f"Loading data from {data_path}")
     df = load_enriched_data(data_path)
-    df_reliable = filter_reliable(df)
 
     # Split data
-    df_train, df_val, df_test = split_by_hash(df_reliable)
+    df_train, df_val, df_test = split_by_hash(df)
     logger.info(f"Test set: {len(df_test)} samples")
 
     # Create test dataset

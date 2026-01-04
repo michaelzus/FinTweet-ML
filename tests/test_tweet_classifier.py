@@ -15,7 +15,7 @@ from tweet_classifier.config import (
     NUMERICAL_FEATURES,
     TARGET_COLUMN,
 )
-from tweet_classifier.data.loader import filter_reliable, prepare_features
+from tweet_classifier.data.loader import prepare_features
 from tweet_classifier.data.splitter import split_by_hash, verify_no_leakage
 from tweet_classifier.data.weights import compute_class_weights
 from tweet_classifier.dataset import (
@@ -41,7 +41,6 @@ def sample_df() -> pd.DataFrame:
             "author": np.random.choice(["Author A", "Author B", "Author C"], n_samples),
             "category": np.random.choice(["news", "opinion", "analysis"], n_samples),
             "tweet_hash": [f"hash_{i}" for i in range(n_samples)],
-            "is_reliable_label": [True] * 80 + [False] * 20,
             TARGET_COLUMN: np.random.choice(["SELL", "HOLD", "BUY"], n_samples),
             # Core numerical features (baseline)
             "volatility_7d": np.random.uniform(0.01, 0.05, n_samples),
@@ -86,7 +85,6 @@ class TestNumericalFeatureExtraction:
 
     def test_prepare_features_returns_correct_columns(self, sample_df: pd.DataFrame):
         """Verify prepare_features returns only safe numerical columns."""
-        sample_df = filter_reliable(sample_df)
         features = prepare_features(sample_df)
 
         # Check numerical features are correct
@@ -199,7 +197,6 @@ class TestTweetDataset:
     def test_dataset_returns_correct_tensor_shapes(self, sample_df: pd.DataFrame):
         """Test TweetDataset returns tensors with correct shapes."""
         tokenizer = MockTokenizer()
-        sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
             sample_df,
@@ -245,7 +242,6 @@ class TestTweetDataset:
     def test_dataset_encodes_labels_correctly(self, sample_df: pd.DataFrame):
         """Test labels are encoded to integers correctly."""
         tokenizer = MockTokenizer()
-        sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
             sample_df,
@@ -327,7 +323,6 @@ class TestDataSplitting:
 
     def test_split_by_hash_no_overlap(self, sample_df: pd.DataFrame):
         """Test split_by_hash produces non-overlapping splits."""
-        sample_df = filter_reliable(sample_df)
         df_train, df_val, df_test = split_by_hash(sample_df)
 
         # Verify no leakage
@@ -335,7 +330,6 @@ class TestDataSplitting:
 
     def test_split_preserves_all_samples(self, sample_df: pd.DataFrame):
         """Test split_by_hash preserves all samples."""
-        sample_df = filter_reliable(sample_df)
         df_train, df_val, df_test = split_by_hash(sample_df)
 
         total = len(df_train) + len(df_val) + len(df_test)
@@ -347,7 +341,6 @@ class TestClassWeights:
 
     def test_compute_class_weights_returns_correct_shape(self, sample_df: pd.DataFrame):
         """Test class weights have correct shape."""
-        sample_df = filter_reliable(sample_df)
         weights = compute_class_weights(sample_df[TARGET_COLUMN])
 
         assert weights.shape == (3,)
@@ -1052,7 +1045,6 @@ class TestEvaluateOnTest:
     @pytest.fixture
     def mock_dataset(self, sample_df: pd.DataFrame):
         """Create a mock dataset for testing."""
-        sample_df = filter_reliable(sample_df)
         encodings = create_categorical_encodings(sample_df)
         encoded_df = encode_categorical(
             sample_df,

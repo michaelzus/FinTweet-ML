@@ -24,7 +24,7 @@ from transformers import BertTokenizer
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from tweet_classifier.config import FINBERT_MODEL_NAME
-from tweet_classifier.data.loader import filter_reliable, load_enriched_data
+from tweet_classifier.data.loader import load_enriched_data
 from tweet_classifier.data.splitter import split_by_time
 from tweet_classifier.dataset import create_dataset_from_df
 from tweet_classifier.evaluate import evaluate_on_test, load_model_for_evaluation
@@ -332,9 +332,8 @@ def main() -> None:
     # Load data
     print(f"Loading data from {args.data}")
     df = load_enriched_data(args.data)
-    df = filter_reliable(df)
 
-    # Temporal split (same as training: 80/10/10)
+    # Temporal split (same as training: 70/15/15)
     df_train, df_val, df_test = split_by_time(df, test_size=0.1, val_size=0.1)
     print(f"Test set: {len(df_test)} samples")
     print(f"Test date range: {df_test['timestamp'].min()} to {df_test['timestamp'].max()}")

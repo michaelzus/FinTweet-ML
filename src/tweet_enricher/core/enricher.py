@@ -455,7 +455,6 @@ class TweetEnricher:
             "gap_open",
             "intraday_range",
             # Data quality
-            "is_reliable_label",
             "tweet_hash",
             # Debug (prices)
             "entry_price",

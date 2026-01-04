@@ -4,7 +4,6 @@ Provides functions for loading, filtering, splitting, and preparing data.
 """
 
 from tweet_classifier.data.loader import (
-    filter_reliable,
     get_data_summary,
     load_enriched_data,
     prepare_features,
@@ -23,7 +22,6 @@ from tweet_classifier.data.weights import (
 __all__ = [
     # Loader
     "load_enriched_data",
-    "filter_reliable",
     "prepare_features",
     "get_data_summary",
     # Splitter
