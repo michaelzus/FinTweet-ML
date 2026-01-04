@@ -731,11 +731,17 @@ def cmd_train(args: argparse.Namespace) -> int:
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
             freeze_bert=args.freeze_bert,
+            freeze_layers=args.freeze_layers,
             dropout=args.dropout,
             evaluate_test=args.evaluate_test,
             temporal_split=args.temporal_split,
             early_stopping_patience=args.early_stopping_patience,
             buy_weight_boost=args.buy_weight_boost,
+            sell_weight_boost=args.sell_weight_boost,
+            classifier_hidden=args.classifier_hidden,
+            numerical_hidden_dim=args.numerical_hidden_dim,
+            author_embedding_dim=args.author_embedding_dim,
+            category_embedding_dim=args.category_embedding_dim,
         )
 
         return 0
@@ -1008,7 +1014,13 @@ Examples:
     train_parser.add_argument("--temporal-split", action="store_true", help="Use temporal split instead of random hash split")
     train_parser.add_argument("--early-stopping-patience", type=int, default=2, help="Early stopping patience (default: 2)")
     train_parser.add_argument("--buy-weight-boost", type=float, default=1.0, help="BUY class weight multiplier (default: 1.0)")
+    train_parser.add_argument("--sell-weight-boost", type=float, default=1.0, help="SELL class weight multiplier (default: 1.0)")
     train_parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay for AdamW optimizer (default: 0.01)")
+    train_parser.add_argument("--freeze-layers", type=int, default=0, help="Number of BERT layers to freeze (0-12, default: 0)")
+    train_parser.add_argument("--classifier-hidden", type=int, default=128, help="Hidden dimension for classifier head (default: 128)")
+    train_parser.add_argument("--numerical-hidden-dim", type=int, default=32, help="Numerical encoder hidden dim (default: 32)")
+    train_parser.add_argument("--author-embedding-dim", type=int, default=16, help="Author embedding dimension (default: 16)")
+    train_parser.add_argument("--category-embedding-dim", type=int, default=8, help="Category embedding dimension (default: 8)")
     train_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     train_parser.set_defaults(func=cmd_train)
 
